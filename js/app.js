@@ -1284,6 +1284,21 @@
     }
   } catch (e) { sb = null; }
 
+  // New accounts are gated through Master Office (request → payment → set-password
+  // link), not in-app signup. "Daftar" sends them there.
+  var DAFTAR_URL = 'https://masteroffice.sterith.com/daftar?app=health';
+
+  // A set-password link (from Confirm Payment in Master Office) lands here with an
+  // invite/recovery token — detect it so boot shows the "Atur Kata Sandi" screen.
+  var _setpassFlow = (function () {
+    try {
+      var h = new URLSearchParams((location.hash || '').replace(/^#/, ''));
+      var q = new URLSearchParams(location.search || '');
+      var type = h.get('type') || q.get('type');
+      return type === 'recovery' || type === 'invite' || h.has('access_token') || q.has('token_hash') || q.has('code');
+    } catch (e) { return false; }
+  })();
+
   function isDemo() { return localStorage.getItem('sterith_demo') === '1'; }
   function setDemo(v) { if (v) localStorage.setItem('sterith_demo', '1'); else localStorage.removeItem('sterith_demo'); }
 
@@ -1338,6 +1353,7 @@
   function renderAuth(mode) {
     if (mode === 'thankyou') return renderThankYou();
     if (mode === 'register') return renderRegister();
+    if (mode === 'setpass') return renderSetPass();
     // ---- Login (default) ----
     var acc = getAuth();
     authShell(
@@ -1387,6 +1403,25 @@
     );
   }
 
+  function renderSetPass() {
+    authShell(
+      '<div class="auth-eyebrow">Akun · Atur Kata Sandi</div>' +
+      '<h1 class="auth-title">Buat kata sandi</h1>' +
+      '<p class="auth-sub">Buat kata sandi untuk mengaktifkan akun Sterith Health Anda.</p>' +
+      '<div class="auth-card">' +
+      '<div class="field"><label>Kata sandi</label><div class="auth-input"><span class="ai-ic">' + svg('lock', 18) + '</span>' +
+      '<input class="input" id="au-pass" type="password" placeholder="Minimal 8 karakter" autocomplete="new-password">' +
+      '<button class="ai-eye" data-act="au-eye" data-for="au-pass">' + svg('eye', 18) + '</button></div></div>' +
+      '<div class="field"><label>Ulangi kata sandi</label><div class="auth-input"><span class="ai-ic">' + svg('lock', 18) + '</span>' +
+      '<input class="input" id="au-pass2" type="password" placeholder="Ketik ulang kata sandi" autocomplete="new-password">' +
+      '<button class="ai-eye" data-act="au-eye" data-for="au-pass2">' + svg('eye', 18) + '</button></div></div>' +
+      '<button class="btn btn-primary btn-block btn-lg" style="margin-top:18px" data-act="au-setpass">Aktifkan Akun <span class="arrow">&rarr;</span></button>' +
+      '</div>' +
+      '<div class="auth-foot">Email login Anda sudah terhubung ke tautan ini.</div>',
+      'auth-setpass'
+    );
+  }
+
   function renderThankYou() {
     authShell(
       '<div class="ty"><div class="ty-check">' + svg('check', 40) + '</div>' +
@@ -1406,7 +1441,7 @@
     inp.type = show ? 'text' : 'password';
     t.innerHTML = svg(show ? 'eyeoff' : 'eye', 18);
   });
-  on('au-to-register', function () { renderAuth('register'); });
+  on('au-to-register', function () { window.location.href = DAFTAR_URL; });
   on('au-to-login', function () { renderAuth('login'); });
   on('au-register', function () {
     var name = (document.getElementById('au-name').value || '').trim();
@@ -1434,6 +1469,27 @@
         if (btn) { btn.disabled = false; btn.innerHTML = 'Daftar <span class="arrow">&rarr;</span>'; }
         var m = (err && err.message) || '';
         toast(/registered|already/i.test(m) ? 'Email sudah terdaftar. Silakan masuk.' : (m || 'Gagal mendaftar'));
+      });
+  });
+  on('au-setpass', function () {
+    var p1 = document.getElementById('au-pass').value;
+    var p2 = document.getElementById('au-pass2').value;
+    if (p1.length < 8) return toast('Kata sandi minimal 8 karakter');
+    if (p1 !== p2) return toast('Kata sandi tidak cocok');
+    if (!sb) return toast('Tidak ada koneksi. Coba lagi.');
+    var btn = document.querySelector('[data-act="au-setpass"]');
+    if (btn) { btn.disabled = true; btn.textContent = 'Menyimpan…'; }
+    sb.auth.updateUser({ password: p1 })
+      .then(function (res) {
+        if (res.error) throw res.error;
+        setDemo(false); setAuthed(true);
+        try { history.replaceState(null, '', location.pathname); } catch (e) {}
+        return cloudLoad().then(function () { enterApp(); toast('Akun aktif. Selamat datang!'); });
+      })
+      .catch(function (err) {
+        if (btn) { btn.disabled = false; btn.innerHTML = 'Aktifkan Akun <span class="arrow">&rarr;</span>'; }
+        var m = (err && err.message) || '';
+        toast(/expired|invalid|token/i.test(m) ? 'Tautan sudah kadaluarsa. Minta tautan baru.' : (m || 'Gagal menyimpan'));
       });
   });
   on('au-enter', function () { enterApp(); });
@@ -1600,7 +1656,11 @@
   render();
   // Decide the gate from the real Supabase session (async). The launch splash
   // covers this brief check. Demo mode is local-only.
-  if (sb) {
+  if (sb && _setpassFlow) {
+    // Arrived via a set-password link — let supabase-js settle the session from the
+    // URL, then show "Atur Kata Sandi".
+    setTimeout(function () { renderAuth('setpass'); }, 250);
+  } else if (sb) {
     sb.auth.getSession().then(function (res) {
       var session = res && res.data && res.data.session;
       if (session) { cloudLoad().then(function () { enterApp(); }); }
