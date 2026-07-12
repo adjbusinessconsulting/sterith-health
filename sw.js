@@ -1,9 +1,10 @@
 /* Sterith Workout — service worker (offline shell cache) */
-var CACHE = 'sterith-workout-v3';
+var CACHE = 'sterith-workout-v4';
 var ASSETS = [
   './',
   './index.html',
   './css/styles.css',
+  './js/config.js',
   './js/data.js',
   './js/app.js',
   './manifest.webmanifest',

@@ -1273,6 +1273,54 @@
   function setAuthed(v) { if (v) localStorage.setItem('sterith_authed', '1'); else localStorage.removeItem('sterith_authed'); }
   function validEmail(e) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e); }
 
+  // ---- Cloud (Supabase) sync -------------------------------------------------
+  // Whole app state (SterithStore.exportAll) is stored per-user in health_state.
+  // Pull on login, debounced-push on every change. localStorage stays the offline
+  // cache. Demo mode is local-only (no cloud).
+  var sb = null;
+  try {
+    if (window.supabase && window.STERITH_SUPABASE) {
+      sb = window.supabase.createClient(window.STERITH_SUPABASE.url, window.STERITH_SUPABASE.anon);
+    }
+  } catch (e) { sb = null; }
+
+  function isDemo() { return localStorage.getItem('sterith_demo') === '1'; }
+  function setDemo(v) { if (v) localStorage.setItem('sterith_demo', '1'); else localStorage.removeItem('sterith_demo'); }
+
+  var _pushTimer = null;
+  function cloudPush() {
+    if (!sb) return;
+    clearTimeout(_pushTimer);
+    _pushTimer = setTimeout(function () { cloudPushNow(); }, 1200);
+  }
+  function cloudPushNow() {
+    if (!sb) return Promise.resolve();
+    return sb.auth.getUser().then(function (r) {
+      var user = r && r.data && r.data.user;
+      if (!user) return;
+      return sb.from('health_state').upsert(
+        { user_id: user.id, data: S.exportAll(), updated_at: new Date().toISOString() },
+        { onConflict: 'user_id' }
+      );
+    }).catch(function () {});
+  }
+  function cloudLoad() {
+    if (!sb) return Promise.resolve();
+    return sb.auth.getUser().then(function (r) {
+      var user = r && r.data && r.data.user;
+      if (!user) return;
+      return sb.from('health_state').select('data').eq('user_id', user.id).maybeSingle().then(function (res) {
+        var row = res && res.data;
+        if (row && row.data && Object.keys(row.data).length) {
+          try { S.importAll(row.data); } catch (e) {}
+        } else {
+          return cloudPushNow(); // first login — migrate local data up
+        }
+      });
+    }).catch(function () {});
+  }
+  if (S.setSyncHandler) S.setSyncHandler(cloudPush);
+
   var _lastName = '';
   function showAuth() { renderAuth('login'); }
 
@@ -1371,34 +1419,55 @@
     if (!validEmail(email)) return toast('Email tidak valid');
     if (pass.length < 8) return toast('Kata sandi minimal 8 karakter');
     if (pass !== pass2) return toast('Kata sandi tidak cocok');
-    localStorage.setItem('sterith_auth', JSON.stringify({ email: email, pass: pass, name: name }));
-    setAuthed(true);
-    var p = S.getProfile();
-    p.name = name; p.address = address; p.whatsapp = wa;
-    S.saveProfile(p);
-    _lastName = name;
-    renderAuth('thankyou');
+    if (!sb) return toast('Tidak ada koneksi. Coba lagi.');
+    var btn = document.querySelector('[data-act="au-register"]');
+    if (btn) { btn.disabled = true; btn.textContent = 'Mendaftar…'; }
+    sb.auth.signUp({ email: email, password: pass, options: { data: { name: name, wa_number: wa, address: address } } })
+      .then(function (res) {
+        if (res.error) throw res.error;
+        setDemo(false); setAuthed(true);
+        var p = S.getProfile(); p.name = name; p.address = address; p.whatsapp = wa; S.saveProfile(p);
+        _lastName = name;
+        return cloudPushNow().then(function () { renderAuth('thankyou'); });
+      })
+      .catch(function (err) {
+        if (btn) { btn.disabled = false; btn.innerHTML = 'Daftar <span class="arrow">&rarr;</span>'; }
+        var m = (err && err.message) || '';
+        toast(/registered|already/i.test(m) ? 'Email sudah terdaftar. Silakan masuk.' : (m || 'Gagal mendaftar'));
+      });
   });
   on('au-enter', function () { enterApp(); });
   on('au-login', function () {
     var email = document.getElementById('au-email').value.trim();
     var pass = document.getElementById('au-pass').value;
-    var acc = getAuth();
-    if (!acc || acc.email.toLowerCase() !== email.toLowerCase() || acc.pass !== pass) return toast('Email atau kata sandi salah');
-    setAuthed(true);
-    enterApp();
+    if (!validEmail(email)) return toast('Email tidak valid');
+    if (!sb) return toast('Tidak ada koneksi. Coba lagi.');
+    var btn = document.querySelector('[data-act="au-login"]');
+    if (btn) { btn.disabled = true; btn.textContent = 'Masuk…'; }
+    sb.auth.signInWithPassword({ email: email, password: pass })
+      .then(function (res) {
+        if (res.error) throw res.error;
+        setDemo(false); setAuthed(true);
+        return cloudLoad().then(function () { enterApp(); });
+      })
+      .catch(function () {
+        if (btn) { btn.disabled = false; btn.innerHTML = 'Masuk <span class="arrow">&rarr;</span>'; }
+        toast('Email atau kata sandi salah');
+      });
   });
   on('au-demo', function () {
     seedDemo();
-    setAuthed(true);
+    setDemo(true); setAuthed(true);
     enterApp();
     toast('Mode demo aktif');
   });
   on('logout', function () {
-    if (!confirm('Keluar? Data tetap tersimpan di perangkat ini.')) return;
-    setAuthed(false); closeSheet();
+    if (!confirm('Keluar dari akun Anda?')) return;
+    closeSheet();
     if (state.session) { state.session = null; } // don't leave an in-progress session behind the gate
-    showAuth();
+    setAuthed(false); setDemo(false);
+    var done = function () { showAuth(); };
+    if (sb) { sb.auth.signOut().then(done, done); } else { done(); }
   });
   function enterApp() {
     var el = document.getElementById('auth');
@@ -1529,7 +1598,18 @@
   // ============================================================ BOOT =========
   buildNav();
   render();
-  if (!isAuthed()) showAuth();
+  // Decide the gate from the real Supabase session (async). The launch splash
+  // covers this brief check. Demo mode is local-only.
+  if (sb) {
+    sb.auth.getSession().then(function (res) {
+      var session = res && res.data && res.data.session;
+      if (session) { cloudLoad().then(function () { enterApp(); }); }
+      else if (isDemo()) { enterApp(); }
+      else { showAuth(); }
+    }).catch(function () { if (isDemo()) enterApp(); else showAuth(); });
+  } else {
+    if (isDemo() || isAuthed()) enterApp(); else showAuth();
+  }
 
   // fade out launch splash once the app is up
   (function () {

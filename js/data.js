@@ -54,6 +54,10 @@
     draft: 'sterith_session_draft'
   };
 
+  // Optional cloud-sync handler — set via Store.setSyncHandler(). Called after
+  // every write so the app can debounce-push the full state to Supabase.
+  let _sync = null;
+
   function read(key, fallback) {
     try {
       const raw = localStorage.getItem(key);
@@ -62,6 +66,7 @@
   }
   function write(key, value) {
     localStorage.setItem(key, JSON.stringify(value));
+    if (_sync && key !== K.draft) { try { _sync(key); } catch (e) {} }
   }
 
   function uid() {
@@ -89,6 +94,9 @@
   const Store = {
     K: K,
     uid: uid,
+
+    // Register a function called (debounced by the caller) after each write.
+    setSyncHandler: function (fn) { _sync = fn; },
 
     getLibrary: function () {
       let lib = read(K.library, null);
