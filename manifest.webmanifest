@@ -1,6 +1,6 @@
 {
-  "name": "Sterith Workout",
-  "short_name": "Sterith",
+  "name": "Sterith Health",
+  "short_name": "Sterith Health",
   "description": "Sterith bodybuilding tracker — log workouts, routines, weight and statistics.",
   "start_url": "./index.html",
   "scope": "./",
