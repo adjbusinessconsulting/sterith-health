@@ -1800,6 +1800,8 @@
   render();
   // Decide the gate from the real Supabase session (async). The launch splash
   // covers this brief check. Demo mode is local-only.
+  // Demo never auto-resumes — it's only entered by tapping "Coba demo" in-session.
+  setDemo(false);
   if (sb && _setpassFlow) {
     // Arrived via a set-password link — let supabase-js settle the session from the
     // URL, then show "Atur Kata Sandi".
@@ -1808,11 +1810,10 @@
     sb.auth.getSession().then(function (res) {
       var session = res && res.data && res.data.session;
       if (session) { enterIfAccess(); }
-      else if (isDemo()) { enterApp(); }
       else { showAuth(); }
-    }).catch(function () { if (isDemo()) enterApp(); else showAuth(); });
+    }).catch(function () { showAuth(); });
   } else {
-    if (isDemo() || isAuthed()) enterApp(); else showAuth();
+    showAuth();
   }
 
   // fade out launch splash once the app is up
