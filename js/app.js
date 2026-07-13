@@ -1803,7 +1803,13 @@
   // covers this brief check. Demo mode is local-only.
   // Demo never auto-resumes — it's only entered by tapping "Coba demo" in-session.
   setDemo(false);
-  if (sb && _setpassFlow) {
+  // Auto-enter demo when opened with ?demo=true (e.g. the website preview iframe).
+  // Same activation as tapping "Coba demo" — local-only, never touches cloud auth.
+  if (/[?&]demo=(1|true)\b/i.test(location.search)) {
+    seedDemo();
+    setDemo(true); setAuthed(true);
+    enterApp();
+  } else if (sb && _setpassFlow) {
     // Arrived via a set-password link — let supabase-js settle the session from the
     // URL, then show "Atur Kata Sandi".
     setTimeout(function () { renderAuth('setpass'); }, 250);
