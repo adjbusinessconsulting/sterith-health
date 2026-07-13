@@ -333,6 +333,25 @@
     });
     return order.sort();
   }
+  // Logged exercises grouped by their category, for the metric picker.
+  function trackedByCat() {
+    var map = {}, seen = {};
+    S.getLogs().forEach(function (l) {
+      l.exercises.forEach(function (e) {
+        var cat = e.category || 'Lainnya', k = cat + '|' + e.name;
+        if (!seen[k]) { seen[k] = 1; (map[cat] = map[cat] || []).push(e.name); }
+      });
+    });
+    Object.keys(map).forEach(function (c) { map[c].sort(); });
+    return map;
+  }
+  function metricLabelOf(metric) {
+    if (metric === 'bodyweight') return 'Berat badan';
+    if (metric === 'bodyfat') return 'Lemak tubuh';
+    if (metric.indexOf('meas:') === 0) return measLabel(metric.slice(5));
+    if (metric.indexOf('ex:') === 0) return metric.slice(3);
+    return metric;
+  }
   // Body-fat series from daily check-ins.
   function bodyfatSeries() {
     return S.getCheckins().filter(function (c) { return c.bodyfat != null && c.bodyfat !== ''; })
@@ -440,7 +459,10 @@
       chart +
       '<div class="chips" style="padding:12px 0 4px">' + periodChips + '</div>' +
       '<div class="field" style="margin-top:4px"><label>Lacak</label>' +
-      '<select class="select" id="track-metric" data-change="track-metric">' + opts + '</select></div>' +
+      '<button class="metric-btn" data-act="open-metric" style="width:100%;height:48px;border:1px solid var(--border);border-radius:13px;padding:0 14px;background:var(--card);color:var(--ink);font:500 15px/1 \'Hanken Grotesk\';display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;text-align:left">' +
+      '<span>' + esc(metricLabelOf(metric)) + '</span>' +
+      '<span style="color:var(--gold);background:var(--ink);width:24px;height:24px;border-radius:7px;display:grid;place-items:center;flex-shrink:0"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></span>' +
+      '</button></div>' +
       '</div>';
   }
   function emptyChartMsg(has, hint) {
@@ -761,6 +783,48 @@
     var si = document.getElementById('pick-search');
     if (si) { si.value = search; si.focus(); }
   }
+  // ---- Metric picker (Statistics → Tracker "Lacak") — on-brand sheet ----
+  function openMetricPicker() {
+    var cat = 'body';
+    if (state.trackMetric.indexOf('ex:') === 0) {
+      var nm = state.trackMetric.slice(3), byc = trackedByCat();
+      Object.keys(byc).forEach(function (c) { if (byc[c].indexOf(nm) !== -1) cat = c; });
+    }
+    state.mpick = { cat: cat };
+    renderMetricPicker();
+  }
+  function renderMetricPicker() {
+    var byc = trackedByCat();
+    var exCats = Object.keys(byc).sort();
+    var cur = state.mpick.cat;
+    var cats = [{ id: 'body', name: 'Body Stat' }].concat(exCats.map(function (c) { return { id: c, name: c }; }));
+    var chips = cats.map(function (c) {
+      return '<button class="chip' + (cur === c.id ? ' active' : '') + '" data-act="mpick-cat" data-id="' + esc(c.id) + '">' + esc(c.name) + '</button>';
+    }).join('');
+    function row(value, name, sub) {
+      var sel = state.trackMetric === value;
+      return '<div class="pick' + (sel ? ' sel' : '') + '" data-act="mpick-choose" data-value="' + esc(value) + '">' +
+        '<div class="pcheck">' + svg('check', 15) + '</div>' +
+        '<div class="pname">' + esc(name) + '</div><div class="pcat">' + esc(sub) + '</div></div>';
+    }
+    var rows = '';
+    if (cur === 'body') {
+      rows += row('bodyweight', 'Berat badan', 'Tubuh');
+      rows += row('bodyfat', 'Lemak tubuh', 'Tubuh');
+      MEASUREMENTS.forEach(function (m) { rows += row('meas:' + m.key, m.label, 'Ukuran'); });
+    } else {
+      (byc[cur] || []).forEach(function (nm) { rows += row('ex:' + nm, nm, cur); });
+    }
+    if (!rows) rows = '<div class="muted-line" style="padding:20px 0;text-align:center">Belum ada data. Catat latihan dulu.</div>';
+    var html = '<div class="sheet-head"><div><div class="eyebrow">Statistik · Tracker</div><h2>Pilih yang dilacak</h2></div>' +
+      '<button class="close" data-act="close-sheet">' + svg('close') + '</button></div>' +
+      '<div class="sheet-body"><div class="chips">' + chips + '</div>' + rows + '</div>';
+    openSheet(html);
+  }
+  on('open-metric', function () { openMetricPicker(); });
+  on('mpick-cat', function (t) { state.mpick.cat = t.dataset.id; renderMetricPicker(); });
+  on('mpick-choose', function (t) { state.trackMetric = t.dataset.value; closeSheet(); render(); });
+
   on('close-picker', function () { state.picker.open = false; closeSheet(); });
   on('pick-filter', function (t) { state.picker.filter = t.dataset.id; refreshPickerRows(); });
   on('pick-toggle', function (t) {

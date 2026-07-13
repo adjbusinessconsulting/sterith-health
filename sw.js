@@ -1,5 +1,5 @@
 /* Sterith Workout — service worker (offline shell cache) */
-var CACHE = 'sterith-workout-v7';
+var CACHE = 'sterith-workout-v8';
 var ASSETS = [
   './',
   './index.html',
