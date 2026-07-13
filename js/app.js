@@ -1336,6 +1336,31 @@
   }
   if (S.setSyncHandler) S.setSyncHandler(cloudPush);
 
+  // Per-app access: same email may span apps, but each app still requires its own
+  // payment/confirmation. User must be SUBSCRIBED to 'health' (tenants.apps) — RLS
+  // returns only their own tenant row.
+  function hasHealthAccess() {
+    if (!sb) return Promise.resolve(false);
+    return sb.auth.getUser().then(function (r) {
+      var user = r && r.data && r.data.user;
+      if (!user) return false;
+      return sb.from('tenants').select('apps').then(function (res) {
+        var rows = res && res.data;
+        var apps = rows && rows[0] && rows[0].apps;
+        return Array.isArray(apps) && apps.indexOf('health') !== -1;
+      });
+    }).catch(function () { return false; });
+  }
+  // Enter the app only if the user has Health access; otherwise sign out + gate.
+  function enterIfAccess() {
+    return hasHealthAccess().then(function (ok) {
+      if (ok) { setDemo(false); setAuthed(true); return cloudLoad().then(function () { enterApp(); }); }
+      if (sb) sb.auth.signOut();
+      setAuthed(false);
+      renderAuth('noaccess');
+    });
+  }
+
   var _lastName = '';
   function showAuth() { renderAuth('login'); }
 
@@ -1355,6 +1380,7 @@
     if (mode === 'register') return renderRegister();
     if (mode === 'setpass') return renderSetPass();
     if (mode === 'forgot') return renderForgot();
+    if (mode === 'noaccess') return renderNoAccess();
     // ---- Login (default) ----
     var acc = getAuth();
     authShell(
@@ -1375,6 +1401,19 @@
       '<button class="btn btn-gold btn-block btn-lg" data-act="au-demo">' + svg('play', 18) + ' Coba demo</button>' +
       '<div class="auth-foot">Sterith Health · Data tersinkron aman di akun Anda</div>',
       'auth-login'
+    );
+  }
+
+  function renderNoAccess() {
+    authShell(
+      '<div class="auth-eyebrow">Akses · Sterith Health</div>' +
+      '<h1 class="auth-title">Belum berlangganan</h1>' +
+      '<p class="auth-sub">Akun Anda belum punya akses ke Sterith Health. Ajukan dulu — tim kami konfirmasi pembayaran, lalu Anda masuk dengan akun yang sama.</p>' +
+      '<div class="auth-card">' +
+      '<button class="btn btn-primary btn-block btn-lg" data-act="au-to-register">Ajukan Sterith Health <span class="arrow">&rarr;</span></button>' +
+      '<div class="auth-toggle">Bukan Anda? <button data-act="au-to-login">Masuk akun lain</button></div>' +
+      '</div>',
+      'auth-noaccess'
     );
   }
 
@@ -1424,8 +1463,11 @@
     authShell(
       '<div class="auth-eyebrow">Akun · Atur Kata Sandi</div>' +
       '<h1 class="auth-title">Buat kata sandi</h1>' +
-      '<p class="auth-sub">Buat kata sandi untuk mengaktifkan akun Sterith Health Anda.</p>' +
+      '<p class="auth-sub">Buat kata sandi untuk akun di bawah, lalu Anda langsung bisa memakai aplikasi.</p>' +
       '<div class="auth-card">' +
+      '<div class="field"><label>Email</label><div class="auth-input" style="opacity:0.7">' +
+      '<span class="ai-ic">' + svg('mail', 18) + '</span>' +
+      '<input class="input" id="au-email" type="email" value="memuat…" readonly disabled tabindex="-1" style="pointer-events:none;background:transparent"></div></div>' +
       '<div class="field"><label>Kata sandi</label><div class="auth-input"><span class="ai-ic">' + svg('lock', 18) + '</span>' +
       '<input class="input" id="au-pass" type="password" placeholder="Minimal 8 karakter" autocomplete="new-password">' +
       '<button class="ai-eye" data-act="au-eye" data-for="au-pass">' + svg('eye', 18) + '</button></div></div>' +
@@ -1433,10 +1475,15 @@
       '<input class="input" id="au-pass2" type="password" placeholder="Ketik ulang kata sandi" autocomplete="new-password">' +
       '<button class="ai-eye" data-act="au-eye" data-for="au-pass2">' + svg('eye', 18) + '</button></div></div>' +
       '<button class="btn btn-primary btn-block btn-lg" style="margin-top:18px" data-act="au-setpass">Aktifkan Akun <span class="arrow">&rarr;</span></button>' +
-      '</div>' +
-      '<div class="auth-foot">Email login Anda sudah terhubung ke tautan ini.</div>',
+      '</div>',
       'auth-setpass'
     );
+    // Fill the (read-only) email from the invited session.
+    if (sb) sb.auth.getUser().then(function (r) {
+      var el = document.getElementById('au-email');
+      var u = r && r.data && r.data.user;
+      if (el && u && u.email) el.value = u.email;
+    });
   }
 
   function renderThankYou() {
@@ -1516,9 +1563,9 @@
     sb.auth.updateUser({ password: p1 })
       .then(function (res) {
         if (res.error) throw res.error;
-        setDemo(false); setAuthed(true);
         try { history.replaceState(null, '', location.pathname); } catch (e) {}
-        return cloudLoad().then(function () { enterApp(); toast('Akun aktif. Selamat datang!'); });
+        toast('Kata sandi tersimpan!');
+        return enterIfAccess();   // they were just granted Health at Confirm Payment
       })
       .catch(function (err) {
         if (btn) { btn.disabled = false; btn.innerHTML = 'Aktifkan Akun <span class="arrow">&rarr;</span>'; }
@@ -1537,8 +1584,7 @@
     sb.auth.signInWithPassword({ email: email, password: pass })
       .then(function (res) {
         if (res.error) throw res.error;
-        setDemo(false); setAuthed(true);
-        return cloudLoad().then(function () { enterApp(); });
+        return enterIfAccess();   // must be subscribed to Health
       })
       .catch(function () {
         if (btn) { btn.disabled = false; btn.innerHTML = 'Masuk <span class="arrow">&rarr;</span>'; }
@@ -1697,7 +1743,7 @@
   } else if (sb) {
     sb.auth.getSession().then(function (res) {
       var session = res && res.data && res.data.session;
-      if (session) { cloudLoad().then(function () { enterApp(); }); }
+      if (session) { enterIfAccess(); }
       else if (isDemo()) { enterApp(); }
       else { showAuth(); }
     }).catch(function () { if (isDemo()) enterApp(); else showAuth(); });
