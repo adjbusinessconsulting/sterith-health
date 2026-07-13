@@ -1354,6 +1354,7 @@
     if (mode === 'thankyou') return renderThankYou();
     if (mode === 'register') return renderRegister();
     if (mode === 'setpass') return renderSetPass();
+    if (mode === 'forgot') return renderForgot();
     // ---- Login (default) ----
     var acc = getAuth();
     authShell(
@@ -1367,12 +1368,28 @@
       '<input class="input" id="au-pass" type="password" placeholder="Kata sandi" autocomplete="current-password">' +
       '<button class="ai-eye" data-act="au-eye" data-for="au-pass">' + svg('eye', 18) + '</button></div></div>' +
       '<button class="btn btn-primary btn-block btn-lg" style="margin-top:18px" data-act="au-login">Masuk <span class="arrow">&rarr;</span></button>' +
+      '<div style="text-align:center;margin-top:12px"><button data-act="au-to-forgot" style="background:none;border:none;color:#8f897a;font-size:12.5px;cursor:pointer;font-family:inherit;text-decoration:underline;text-underline-offset:2px">Lupa kata sandi?</button></div>' +
       '<div class="auth-toggle">Belum ada akun? <button data-act="au-to-register">Daftar</button></div>' +
       '</div>' +
       '<div class="auth-or"><span>atau</span></div>' +
       '<button class="btn btn-gold btn-block btn-lg" data-act="au-demo">' + svg('play', 18) + ' Coba demo</button>' +
-      '<div class="auth-foot">Data tersimpan di perangkat ini · Sterith Health</div>',
+      '<div class="auth-foot">Sterith Health · Data tersinkron aman di akun Anda</div>',
       'auth-login'
+    );
+  }
+
+  function renderForgot() {
+    authShell(
+      '<div class="auth-eyebrow">Akun · Lupa Sandi</div>' +
+      '<h1 class="auth-title">Atur ulang kata sandi</h1>' +
+      '<p class="auth-sub">Masukkan email akun Anda. Kami kirim tautan untuk membuat kata sandi baru.</p>' +
+      '<div class="auth-card">' +
+      '<div class="field"><label>Email</label><div class="auth-input"><span class="ai-ic">' + svg('mail', 18) + '</span>' +
+      '<input class="input" id="au-email" type="email" inputmode="email" placeholder="nama@email.com" autocomplete="email"></div></div>' +
+      '<button class="btn btn-primary btn-block btn-lg" style="margin-top:18px" data-act="au-forgot">Kirim Tautan Reset <span class="arrow">&rarr;</span></button>' +
+      '<div class="auth-toggle">Ingat kata sandi? <button data-act="au-to-login">Masuk</button></div>' +
+      '</div>',
+      'auth-forgot'
     );
   }
 
@@ -1443,6 +1460,23 @@
   });
   on('au-to-register', function () { window.location.href = DAFTAR_URL; });
   on('au-to-login', function () { renderAuth('login'); });
+  on('au-to-forgot', function () { renderAuth('forgot'); });
+  on('au-forgot', function () {
+    var email = document.getElementById('au-email').value.trim();
+    if (!validEmail(email)) return toast('Email tidak valid');
+    if (!sb) return toast('Tidak ada koneksi. Coba lagi.');
+    var btn = document.querySelector('[data-act="au-forgot"]');
+    if (btn) { btn.disabled = true; btn.textContent = 'Mengirim…'; }
+    sb.auth.resetPasswordForEmail(email, { redirectTo: 'https://health.sterith.com' })
+      .then(function () {
+        toast('Jika email terdaftar, tautan reset sudah dikirim. Cek inbox / spam.');
+        renderAuth('login');
+      })
+      .catch(function () {
+        if (btn) { btn.disabled = false; btn.innerHTML = 'Kirim Tautan Reset <span class="arrow">&rarr;</span>'; }
+        toast('Gagal mengirim. Coba lagi.');
+      });
+  });
   on('au-register', function () {
     var name = (document.getElementById('au-name').value || '').trim();
     var wa = (document.getElementById('au-wa').value || '').trim();
