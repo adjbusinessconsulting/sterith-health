@@ -1348,9 +1348,10 @@
     }
   } catch (e) { sb = null; }
 
-  // New accounts are gated through Master Office (request → payment → set-password
-  // link), not in-app signup. "Daftar" sends them there.
-  var DAFTAR_URL = 'https://masteroffice.sterith.com/daftar?app=health';
+  // New accounts start at the Sterith website form (portfolio + Sterith Health tab),
+  // which posts to Master Office (request → payment → set-password link). Not in-app
+  // signup. "Daftar" sends them there.
+  var DAFTAR_URL = 'https://sterith.com/form.html?daftar=health';
 
   // A set-password link (from Confirm Payment in Master Office) lands here with an
   // invite/recovery token — detect it so boot shows the "Atur Kata Sandi" screen.
