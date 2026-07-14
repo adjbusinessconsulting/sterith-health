@@ -1838,8 +1838,25 @@
     setTimeout(function () { if (sp.parentNode) sp.parentNode.removeChild(sp); }, 1550);
   })();
 
-  // service worker
+  // service worker + auto-update
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', function () { navigator.serviceWorker.register('./sw.js').catch(function () {}); });
+    // When a new service worker takes control, reload once so the newest code
+    // is shown without needing a second manual reopen.
+    var _swRefreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (_swRefreshing) return;
+      // Only reload if a controller already existed (i.e. this is an update, not
+      // the very first install) — avoids an unnecessary reload on first visit.
+      if (navigator.serviceWorker.controller) { _swRefreshing = true; window.location.reload(); }
+    });
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('./sw.js').then(function (reg) {
+        reg.update();
+        // Re-check for a new version whenever the app is brought back to foreground.
+        document.addEventListener('visibilitychange', function () {
+          if (document.visibilityState === 'visible') reg.update();
+        });
+      }).catch(function () {});
+    });
   }
 })();
