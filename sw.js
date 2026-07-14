@@ -1,5 +1,5 @@
-/* Sterith Workout — service worker (offline shell cache) */
-var CACHE = 'sterith-workout-v15';
+/* Sterith Workout — service worker */
+var CACHE = 'sterith-workout-v16';
 var ASSETS = [
   './',
   './index.html',
@@ -15,9 +15,13 @@ var ASSETS = [
 ];
 
 self.addEventListener('install', function (e) {
-  // Cache the new shell but DON'T skipWaiting — the app shows an "update
-  // available" prompt and only activates when the user taps Perbarui.
-  e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(ASSETS); }));
+  // Cache the shell, tolerating individual asset failures so one missing file
+  // can't break the whole worker. No skipWaiting — the app prompts to update.
+  e.waitUntil(
+    caches.open(CACHE).then(function (c) {
+      return Promise.all(ASSETS.map(function (a) { return c.add(a).catch(function () { /* skip */ }); }));
+    })
+  );
 });
 
 self.addEventListener('activate', function (e) {
@@ -37,22 +41,34 @@ self.addEventListener('fetch', function (e) {
   var req = e.request;
   if (req.method !== 'GET') return;
   var url = new URL(req.url);
-  // cache-first for same-origin: the shell is pinned to the active SW version,
-  // so the app stays on the current version until the user accepts the update.
-  if (url.origin === location.origin) {
+
+  // Cross-origin (fonts etc.): cache-first, network fallback.
+  if (url.origin !== location.origin) {
+    e.respondWith(caches.match(req).then(function (r) { return r || fetch(req); }).catch(function () { return caches.match(req); }));
+    return;
+  }
+
+  // Navigations: NETWORK-FIRST so the app shell is always fresh online, falling
+  // back to cache (then index.html, then a minimal page) offline — never fails.
+  if (req.mode === 'navigate') {
     e.respondWith(
-      caches.match(req).then(function (r) {
-        return r || fetch(req).then(function (res) {
-          var copy = res.clone();
-          caches.open(CACHE).then(function (c) { c.put(req, copy); });
-          return res;
-        }).catch(function () { return caches.match('./index.html'); });
+      fetch(req).then(function (res) {
+        var copy = res.clone(); caches.open(CACHE).then(function (c) { c.put(req, copy); }); return res;
+      }).catch(function () {
+        return caches.match(req)
+          .then(function (r) { return r || caches.match('./index.html'); })
+          .then(function (r) { return r || new Response('<!doctype html><meta charset="utf-8"><title>Sterith Health</title><body style="font-family:system-ui;background:#0D1117;color:#f4efe6;display:grid;place-items:center;height:100vh;margin:0"><p>Sedang offline. Sambungkan internet lalu buka lagi.</p>', { headers: { 'Content-Type': 'text/html; charset=utf-8' } }); });
       })
     );
-  } else {
-    // fonts etc: cache-first
-    e.respondWith(caches.match(req).then(function (r) { return r || fetch(req).then(function (res) {
-      var copy = res.clone(); caches.open(CACHE).then(function (c) { c.put(req, copy); }); return res;
-    }).catch(function () { return r; }); }));
+    return;
   }
+
+  // Same-origin assets: cache-first, network fallback, final safety = index.html.
+  e.respondWith(
+    caches.match(req).then(function (r) {
+      return r || fetch(req).then(function (res) {
+        var copy = res.clone(); caches.open(CACHE).then(function (c) { c.put(req, copy); }); return res;
+      });
+    }).catch(function () { return caches.match('./index.html'); })
+  );
 });
