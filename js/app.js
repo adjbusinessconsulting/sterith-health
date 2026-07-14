@@ -1462,6 +1462,7 @@
     el.id = 'auth';
     el.className = cls || '';
     el.innerHTML = '<div class="auth-wrap">' +
+      '<div class="auth-topbar"><span class="auth-st"><i></i>Sesi Aman</span><span class="auth-vr">v1.0</span></div>' +
       '<div class="auth-brand"><img src="assets/logo-dark.png" alt="Sterith Health"></div>' +
       '<div class="auth-divider"><span>Workout · Bodybuilding</span></div>' + inner + '</div>';
     if (!el.parentNode) document.body.appendChild(el);
@@ -1492,7 +1493,7 @@
       '</div>' +
       '<div class="auth-or"><span>atau</span></div>' +
       '<button class="btn btn-gold btn-block btn-lg" data-act="au-demo">' + svg('play', 18) + ' Coba demo</button>' +
-      '<div class="auth-foot">Sterith Health · Data tersinkron aman di akun Anda</div>',
+      '<div class="auth-secure"><span><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> Terenkripsi · Data aman</span><span>© 2026 STERITH</span></div>',
       'auth-login'
     );
   }

@@ -377,6 +377,16 @@ textarea.input { resize:vertical; min-height:70px; line-height:1.5; }
 .auth-or { display:flex; align-items:center; gap:12px; margin:18px 2px; color:var(--muted2); }
 .auth-or::before, .auth-or::after { content:''; height:1px; flex:1; background:var(--border2); }
 .auth-or span { font:600 10.5px/1 'Hanken Grotesk'; letter-spacing:.14em; text-transform:uppercase; }
+/* Back Office-style login polish */
+.auth-topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; }
+.auth-topbar .auth-st { display:flex; align-items:center; gap:7px; font:600 9px/1 'Hanken Grotesk'; letter-spacing:.2em; text-transform:uppercase; color:var(--muted); }
+.auth-topbar .auth-st i { width:7px; height:7px; border-radius:50%; background:#5C9E7E; box-shadow:0 0 0 3px rgba(92,158,126,.22); }
+.auth-topbar .auth-vr { font:500 9px/1 'Hanken Grotesk'; letter-spacing:.15em; color:var(--muted2); }
+.auth-card .field label { display:block; font:600 9px/1 'Hanken Grotesk'; letter-spacing:.2em; text-transform:uppercase; color:var(--muted); margin-bottom:7px; }
+#auth .btn-primary { background:var(--gold); color:var(--ink); text-transform:uppercase; letter-spacing:.12em; font-weight:700; }
+#auth .btn-primary .arrow { color:var(--ink); }
+.auth-secure { display:flex; justify-content:space-between; align-items:center; margin-top:22px; padding-top:15px; border-top:1px solid var(--border); }
+.auth-secure span { font:500 10px/1 'Hanken Grotesk'; color:var(--muted2); display:flex; align-items:center; gap:5px; }
 .ty { padding-top:10px; }
 .ty-check { width:76px; height:76px; border-radius:50%; margin:8px auto 20px; background:var(--successBg); color:var(--success);
   display:grid; place-items:center; border:1px solid #bcd6c2; animation:pop .35s ease; }
