@@ -455,8 +455,8 @@
       }
     }
 
-    return '<div class="card"><div class="section-label" style="margin:0 0 8px">Tracker</div>' +
-      chart +
+    return '<div class="card" id="tracker-card"><div class="section-label" style="margin:0 0 8px">Tracker</div>' +
+      '<div class="tracker-chart" style="min-height:230px">' + chart + '</div>' +
       '<div class="chips" style="padding:12px 0 4px">' + periodChips + '</div>' +
       '<div class="field" style="margin-top:4px"><label>Lacak</label>' +
       '<button class="metric-btn" data-act="open-metric" style="width:100%;height:48px;border:1px solid var(--border);border-radius:13px;padding:0 14px;background:var(--card);color:var(--ink);font:500 15px/1 \'Hanken Grotesk\';display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;text-align:left">' +
@@ -467,6 +467,13 @@
   }
   function emptyChartMsg(has, hint) {
     return '<div class="muted-line" style="padding:14px 0">' + (has ? 'Belum cukup data di periode ini — pilih periode lebih panjang.' : hint) + '</div>';
+  }
+  // Re-render only the tracker card (metric/period changes) so the page doesn't
+  // rebuild/scroll-jump. The chart area keeps a fixed min-height so switching
+  // metrics doesn't resize the page. Falls back to a full render if not on stats.
+  function updateTracker() {
+    var el = document.getElementById('tracker-card');
+    if (el) { el.outerHTML = renderTracker(); } else { render(); }
   }
 
   // ------------------------------------------------------------- PROFILE -----
@@ -823,7 +830,7 @@
   }
   on('open-metric', function () { openMetricPicker(); });
   on('mpick-cat', function (t) { state.mpick.cat = t.dataset.id; renderMetricPicker(); });
-  on('mpick-choose', function (t) { state.trackMetric = t.dataset.value; closeSheet(); render(); });
+  on('mpick-choose', function (t) { state.trackMetric = t.dataset.value; closeSheet(); updateTracker(); });
 
   on('close-picker', function () { state.picker.open = false; closeSheet(); });
   on('pick-filter', function (t) { state.picker.filter = t.dataset.id; refreshPickerRows(); });
@@ -1156,7 +1163,7 @@
     sheetSlot.insertAdjacentHTML('beforeend', '<div class="backdrop" data-act="close-lightbox" style="z-index:70;background:rgba(10,14,20,.85);align-items:center"><img class="lightbox-img" src="' + src + '"></div>');
   });
   on('close-lightbox', function () { var lb = sheetSlot.querySelector('[data-act=close-lightbox]'); if (lb) lb.remove(); });
-  on('track-period', function (t) { state.trackPeriod = t.dataset.p; render(); });
+  on('track-period', function (t) { state.trackPeriod = t.dataset.p; updateTracker(); });
   on('track-range-open', function () {
     var now = new Date();
     var monthAgo = new Date(now.getTime() - 30 * 864e5);
@@ -1180,7 +1187,7 @@
     if (from > to) { var tmp = from; from = to; to = tmp; }
     state.trackRange = { from: from, to: to };
     state.trackPeriod = 'range';
-    closeSheet(); render();
+    closeSheet(); updateTracker();
   });
 
   // ---- Profile edit ----
