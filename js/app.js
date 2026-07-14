@@ -1838,21 +1838,53 @@
     setTimeout(function () { if (sp.parentNode) sp.parentNode.removeChild(sp); }, 1550);
   })();
 
-  // service worker + auto-update
+  // service worker + "update available" prompt
   if ('serviceWorker' in navigator) {
-    // When a new service worker takes control, reload once so the newest code
-    // is shown without needing a second manual reopen.
     var _swRefreshing = false;
+    // When the (newly activated) worker takes control, reload to show new code.
     navigator.serviceWorker.addEventListener('controllerchange', function () {
-      if (_swRefreshing) return;
-      // Only reload if a controller already existed (i.e. this is an update, not
-      // the very first install) — avoids an unnecessary reload on first visit.
-      if (navigator.serviceWorker.controller) { _swRefreshing = true; window.location.reload(); }
+      if (_swRefreshing) return; _swRefreshing = true; window.location.reload();
     });
+
+    // Bottom banner: "Versi baru tersedia · Perbarui". Tapping it activates the
+    // waiting worker (SKIP_WAITING) → controllerchange → reload.
+    function showUpdatePrompt(reg) {
+      if (document.getElementById('sw-update-bar')) return;
+      var bar = document.createElement('div');
+      bar.id = 'sw-update-bar';
+      bar.setAttribute('style', 'position:fixed;left:12px;right:12px;bottom:calc(14px + env(safe-area-inset-bottom));z-index:100000;max-width:440px;margin:0 auto;background:#14203a;color:#F2EDE3;border:1px solid rgba(201,165,95,.45);border-radius:14px;padding:12px 12px 12px 16px;display:flex;align-items:center;gap:10px;box-shadow:0 14px 44px rgba(0,0,0,.45);font-family:"Hanken Grotesk",system-ui,sans-serif;animation:swUp .28s ease both');
+      bar.innerHTML =
+        '<span style="flex:1;font-size:13.5px;font-weight:500">Versi baru tersedia</span>' +
+        '<button id="sw-update-btn" style="background:#C9A55F;color:#14203a;border:0;border-radius:9px;padding:9px 16px;font:600 13px/1 \'Hanken Grotesk\',system-ui;cursor:pointer">Perbarui</button>' +
+        '<button id="sw-update-x" aria-label="Tutup" style="background:transparent;color:rgba(242,237,227,.55);border:0;font-size:20px;line-height:1;cursor:pointer;padding:2px 6px">&times;</button>';
+      if (!document.getElementById('sw-up-style')) {
+        var st = document.createElement('style'); st.id = 'sw-up-style';
+        st.textContent = '@keyframes swUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}';
+        document.head.appendChild(st);
+      }
+      document.body.appendChild(bar);
+      document.getElementById('sw-update-btn').onclick = function () {
+        this.textContent = 'Memperbarui…'; this.disabled = true;
+        if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+        else window.location.reload();
+      };
+      document.getElementById('sw-update-x').onclick = function () { bar.remove(); };
+    }
+
     window.addEventListener('load', function () {
       navigator.serviceWorker.register('./sw.js').then(function (reg) {
+        // An update may already be waiting from a previous check.
+        if (reg.waiting && navigator.serviceWorker.controller) showUpdatePrompt(reg);
+        // A new worker started installing → prompt once it's installed & waiting.
+        reg.addEventListener('updatefound', function () {
+          var nw = reg.installing;
+          if (!nw) return;
+          nw.addEventListener('statechange', function () {
+            if (nw.state === 'installed' && navigator.serviceWorker.controller) showUpdatePrompt(reg);
+          });
+        });
         reg.update();
-        // Re-check for a new version whenever the app is brought back to foreground.
+        // Re-check whenever the app is brought back to the foreground.
         document.addEventListener('visibilitychange', function () {
           if (document.visibilityState === 'visible') reg.update();
         });
