@@ -800,14 +800,9 @@
     state.mpick = { cat: cat };
     renderMetricPicker();
   }
-  function renderMetricPicker() {
+  // Rows for one picker category (Body Stat lists body metrics + all measurements).
+  function mpickRowsHtml(cur) {
     var byc = trackedByCat();
-    var exCats = Object.keys(byc).sort();
-    var cur = state.mpick.cat;
-    var cats = [{ id: 'body', name: 'Body Stat' }].concat(exCats.map(function (c) { return { id: c, name: c }; }));
-    var chips = cats.map(function (c) {
-      return '<button class="chip' + (cur === c.id ? ' active' : '') + '" data-act="mpick-cat" data-id="' + esc(c.id) + '">' + esc(c.name) + '</button>';
-    }).join('');
     function row(value, name, sub) {
       var sel = state.trackMetric === value;
       return '<div class="pick' + (sel ? ' sel' : '') + '" data-act="mpick-choose" data-value="' + esc(value) + '">' +
@@ -823,13 +818,39 @@
       (byc[cur] || []).forEach(function (nm) { rows += row('ex:' + nm, nm, cur); });
     }
     if (!rows) rows = '<div class="muted-line" style="padding:20px 0;text-align:center">Belum ada data. Catat latihan dulu.</div>';
+    return rows;
+  }
+  // Height (px) of the tallest category, so switching categories never resizes.
+  function mpickRowsMinHeight() {
+    var byc = trackedByCat();
+    var maxRows = 2 + MEASUREMENTS.length;   // Body Stat is normally the tallest
+    Object.keys(byc).forEach(function (c) { if ((byc[c] || []).length > maxRows) maxRows = (byc[c] || []).length; });
+    return maxRows * 49;   // ~49px per .pick row
+  }
+  function renderMetricPicker() {
+    var byc = trackedByCat();
+    var exCats = Object.keys(byc).sort();
+    var cur = state.mpick.cat;
+    var cats = [{ id: 'body', name: 'Body Stat' }].concat(exCats.map(function (c) { return { id: c, name: c }; }));
+    var chips = cats.map(function (c) {
+      return '<button class="chip' + (cur === c.id ? ' active' : '') + '" data-act="mpick-cat" data-id="' + esc(c.id) + '">' + esc(c.name) + '</button>';
+    }).join('');
     var html = '<div class="sheet-head"><div><div class="eyebrow">Statistik · Tracker</div><h2>Pilih yang dilacak</h2></div>' +
       '<button class="close" data-act="close-sheet">' + svg('close') + '</button></div>' +
-      '<div class="sheet-body"><div class="chips">' + chips + '</div>' + rows + '</div>';
+      '<div class="sheet-body"><div class="chips">' + chips + '</div>' +
+      '<div id="mpick-rows" style="min-height:' + mpickRowsMinHeight() + 'px">' + mpickRowsHtml(cur) + '</div></div>';
     openSheet(html);
   }
   on('open-metric', function () { openMetricPicker(); });
-  on('mpick-cat', function (t) { state.mpick.cat = t.dataset.id; renderMetricPicker(); });
+  // Switch category in place — swap only the rows + active chip, no sheet re-open.
+  on('mpick-cat', function (t) {
+    state.mpick.cat = t.dataset.id;
+    var rowsEl = document.getElementById('mpick-rows');
+    if (!rowsEl) { renderMetricPicker(); return; }
+    rowsEl.innerHTML = mpickRowsHtml(state.mpick.cat);
+    var chips = document.querySelectorAll('[data-act="mpick-cat"]');
+    for (var i = 0; i < chips.length; i++) chips[i].classList.toggle('active', chips[i].dataset.id === state.mpick.cat);
+  });
   on('mpick-choose', function (t) { state.trackMetric = t.dataset.value; closeSheet(); updateTracker(); });
 
   on('close-picker', function () { state.picker.open = false; closeSheet(); });
