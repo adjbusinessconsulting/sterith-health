@@ -356,7 +356,8 @@ textarea.input { resize:vertical; min-height:70px; line-height:1.5; }
   overflow-y:auto; -webkit-overflow-scrolling:touch;
   animation:fadeUp .3s ease;
 }
-.auth-wrap { max-width:460px; margin:0 auto; padding:44px 22px calc(30px + env(safe-area-inset-bottom)); }
+.auth-wrap { max-width:430px; margin:0 auto; padding:36px 18px calc(28px + env(safe-area-inset-bottom)); }
+.auth-box { background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:22px 22px 18px; box-shadow:0 8px 40px rgba(20,32,58,.06); }
 .auth-brand { display:flex; justify-content:center; }
 .auth-brand img { width:min(58%, 230px); height:auto; }
 .auth-divider { display:flex; align-items:center; gap:14px; margin:6px 4px 26px; color:var(--goldDeep); }
@@ -365,7 +366,7 @@ textarea.input { resize:vertical; min-height:70px; line-height:1.5; }
 .auth-eyebrow { color:var(--goldDeep); font-weight:600; font-size:11px; letter-spacing:.16em; text-transform:uppercase; }
 .auth-title { margin:6px 0 8px; font:500 34px/1.05 'EB Garamond',serif; color:var(--ink); }
 .auth-sub { margin:0; font:400 14px/1.5 'Hanken Grotesk'; color:var(--muted); max-width:400px; }
-.auth-card { background:var(--card); border:1px solid var(--border); border-radius:18px; padding:22px 20px; margin-top:22px; }
+.auth-card { background:transparent; border:none; border-radius:0; padding:0; margin-top:18px; }
 .auth-input { position:relative; }
 .auth-input .ai-ic { position:absolute; left:13px; top:50%; transform:translateY(-50%); color:var(--hint); pointer-events:none; display:grid; place-items:center; }
 .auth-input .input { padding-left:42px; padding-top:14px; padding-bottom:14px; }
@@ -403,7 +404,7 @@ textarea.input { resize:vertical; min-height:70px; line-height:1.5; }
 .auth-login .auth-divider { margin:2px 4px 14px; }
 .auth-login .auth-title { font-size:30px; margin:5px 0 6px; }
 .auth-login .auth-sub { font-size:13px; }
-.auth-login .auth-card { margin-top:16px; padding:18px 18px; }
+.auth-login .auth-card { margin-top:14px; padding:0; }
 .auth-login .auth-card .field { margin-top:12px; }
 .auth-login .auth-card .field:first-child { margin-top:0; }
 .auth-login .auth-input .input { padding-top:12px; padding-bottom:12px; }

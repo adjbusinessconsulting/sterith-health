@@ -1461,10 +1461,10 @@
     var el = document.getElementById('auth') || document.createElement('div');
     el.id = 'auth';
     el.className = cls || '';
-    el.innerHTML = '<div class="auth-wrap">' +
+    el.innerHTML = '<div class="auth-wrap"><div class="auth-box">' +
       '<div class="auth-topbar"><span class="auth-st"><i></i>Sesi Aman</span><span class="auth-vr">v1.0</span></div>' +
       '<div class="auth-brand"><img src="assets/logo-dark.png" alt="Sterith Health"></div>' +
-      '<div class="auth-divider"><span>Workout · Bodybuilding</span></div>' + inner + '</div>';
+      '<div class="auth-divider"><span>Workout · Bodybuilding</span></div>' + inner + '</div></div>';
     if (!el.parentNode) document.body.appendChild(el);
     el.scrollTop = 0;
   }
