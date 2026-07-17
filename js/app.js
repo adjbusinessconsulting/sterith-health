@@ -44,6 +44,7 @@
     eye:'<path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z"/><circle cx="12" cy="12" r="3"/>',
     eyeoff:'<path d="M4 4l16 16"/><path d="M9.9 5.2A9.6 9.6 0 0112 5c6.5 0 10 6 10 6a17 17 0 01-3 3.6M6 6.6A17 17 0 002 11s3.5 6 10 6a9.6 9.6 0 003.2-.5"/>',
     logout:'<path d="M15 12H4M8 8l-4 4 4 4"/><path d="M11 4h7a2 2 0 012 2v12a2 2 0 01-2 2h-7"/>',
+    chat:'<path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>',
     phone:'<path d="M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2z"/>',
     camera:'<path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 011 1v9a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z"/><circle cx="12" cy="13" r="3.2"/>',
     checkin:'<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>'
@@ -533,6 +534,7 @@
     html += menuItem('dumbbell', 'open-library', 'Exercise library', 'Categories & exercises, add your own');
     html += menuItem('settings', 'open-settings', 'Units & data', (u === 'kg' ? 'Kilograms' : 'Pounds') + ' · export / import');
     var acc = getAuth();
+    html += menuItem('chat', 'open-feedback', 'Feedback & suggestions', 'Tell the Sterith team what you think');
     html += menuItem('logout', 'logout', 'Sign out', acc ? acc.email : 'End this session');
     html += '</div>';
 
@@ -1245,6 +1247,50 @@
       address: document.getElementById('pf-address').value.trim()
     });
     closeSheet(); render(); toast('Profile saved');
+  });
+
+  // ---- Feedback & suggestions ----
+  // Goes to the shared `feedback` table → Master Office "Layanan" inbox, tagged
+  // app='health'. The email comes from the signed-in account — no retyping.
+  on('open-feedback', function () {
+    var acc = getAuth();
+    var who = acc && acc.email ? acc.email : '';
+    var html = '<div class="sheet-head"><div><div class="eyebrow">Sterith Health</div><h2>Feedback &amp; suggestions</h2></div>' +
+      '<button class="close" data-act="close-sheet">' + svg('close') + '</button></div>' +
+      '<div class="sheet-body">' +
+      '<p class="muted-line" style="margin:0 0 14px;line-height:1.6">Got an idea, or something not working? Tell us — the team reads every message.</p>' +
+      (who ? '<div class="field"><label>Sending as</label><input class="input" value="' + esc(who) + '" readonly data-act="noop"></div>' : '') +
+      '<div class="field"><label>Type</label><div class="seg" id="fb-kind">' +
+      [['feedback', 'Suggestion'], ['complain', 'Problem']].map(function (x) {
+        return '<button data-act="fb-kind" data-k="' + x[0] + '" class="' + (x[0] === 'feedback' ? 'active' : '') + '">' + x[1] + '</button>';
+      }).join('') + '</div></div>' +
+      '<div class="field"><label>Your message</label><textarea class="input" id="fb-msg" rows="6" placeholder="Write your feedback…" data-act="noop"></textarea></div>' +
+      '</div>' +
+      '<div class="sheet-foot"><button class="btn btn-secondary" data-act="close-sheet">Cancel</button>' +
+      '<button class="btn btn-primary" data-act="send-feedback">Send <span class="arrow">&rarr;</span></button></div>';
+    openSheet(html);
+    _fbKind = 'feedback';
+  });
+  var _fbKind = 'feedback';
+  on('fb-kind', function (t) {
+    _fbKind = t.dataset.k;
+    t.parentNode.querySelectorAll('button').forEach(function (b) { b.classList.remove('active'); });
+    t.classList.add('active');
+  });
+  on('send-feedback', function (t) {
+    var el = document.getElementById('fb-msg');
+    var msg = el ? el.value.trim() : '';
+    if (!msg) { toast('Write a message first'); return; }
+    var acc = getAuth();
+    var email = acc && acc.email ? acc.email : '';
+    if (!sb || !email) { toast('Sign in to send feedback'); return; }
+    t.disabled = true; t.textContent = 'Sending…';
+    sb.from('feedback').insert({
+      type: _fbKind, email: email, message: msg, status: 'pending', app: 'health'
+    }).then(function (r) {
+      if (r && r.error) { t.disabled = false; t.innerHTML = 'Send <span class="arrow">&rarr;</span>'; toast('Failed to send. Try again.'); return; }
+      closeSheet(); toast('Thank you — feedback sent');
+    });
   });
 
   // ---- Settings ----
