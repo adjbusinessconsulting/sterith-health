@@ -1920,10 +1920,10 @@
       if (document.getElementById('sw-update-bar')) return;
       var bar = document.createElement('div');
       bar.id = 'sw-update-bar';
-      bar.setAttribute('style', 'position:fixed;left:12px;right:12px;bottom:calc(14px + env(safe-area-inset-bottom));z-index:100000;max-width:440px;margin:0 auto;background:#14203a;color:#F2EDE3;border:1px solid rgba(201,165,95,.45);border-radius:14px;padding:12px 12px 12px 16px;display:flex;align-items:center;gap:10px;box-shadow:0 14px 44px rgba(0,0,0,.45);font-family:"Hanken Grotesk",system-ui,sans-serif;animation:swUp .28s ease both');
+      bar.setAttribute('style', 'position:fixed;left:12px;right:12px;bottom:calc(14px + env(safe-area-inset-bottom));z-index:100000;max-width:440px;margin:0 auto;background:#0D1117;color:#F2EDE3;border:1px solid rgba(201,165,95,.45);border-radius:14px;padding:12px 12px 12px 16px;display:flex;align-items:center;gap:10px;box-shadow:0 14px 44px rgba(0,0,0,.45);font-family:"Hanken Grotesk",system-ui,sans-serif;animation:swUp .28s ease both');
       bar.innerHTML =
         '<span style="flex:1;font-size:13.5px;font-weight:500">Versi baru tersedia</span>' +
-        '<button id="sw-update-btn" style="background:#C9A55F;color:#14203a;border:0;border-radius:9px;padding:9px 16px;font:600 13px/1 \'Hanken Grotesk\',system-ui;cursor:pointer">Perbarui</button>' +
+        '<button id="sw-update-btn" style="background:#C9A55F;color:#0D1117;border:0;border-radius:9px;padding:9px 16px;font:600 13px/1 \'Hanken Grotesk\',system-ui;cursor:pointer">Perbarui</button>' +
         '<button id="sw-update-x" aria-label="Tutup" style="background:transparent;color:rgba(242,237,227,.55);border:0;font-size:20px;line-height:1;cursor:pointer;padding:2px 6px">&times;</button>';
       if (!document.getElementById('sw-up-style')) {
         var st = document.createElement('style'); st.id = 'sw-up-style';

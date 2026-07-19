@@ -1,8 +1,8 @@
 /* Sterith Workout — mobile-first stylesheet (Sterith design language) */
 
 :root {
-  --canvas:#eceadf; --surface:#f8f6ef; --card:#ffffff; --cardAlt:#faf8f1; --cardWarm:#fbfaf5;
-  --ink:#14203a; --ink2:#26303f; --body:#4a4636;
+  --canvas:#FAFAF7; --surface:#f8f6ef; --card:#ffffff; --cardAlt:#faf8f1; --cardWarm:#fbfaf5;
+  --ink:#0D1117; --ink2:#26303f; --body:#4a4636;
   --muted:#8f897a; --muted2:#9b9484; --hint:#a49d8c; --placeholder:#b3ac9a;
   --gold:#e7c987; --goldDeep:#b8934a; --goldMute:#96762f; --goldChip:#f1e7cd; --goldEdge:#e2d4ad;
   --success:#3f7d54; --successBg:#e9f1ea; --warn:#a5772a; --warnBg:#f3ead0;
