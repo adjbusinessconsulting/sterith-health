@@ -1885,9 +1885,19 @@
     setDemo(true); setAuthed(true);
     enterApp();
   } else if (sb && _setpassFlow) {
-    // Arrived via a set-password link — let supabase-js settle the session from the
-    // URL, then show "Atur Kata Sandi".
-    setTimeout(function () { renderAuth('setpass'); }, 250);
+    // Arrived via a set-password link. The clean token_hash link (sterith.com, no
+    // supabase) needs an explicit verifyOtp to establish the session; the older
+    // implicit #access_token link settles on its own.
+    var _q = new URLSearchParams(location.search || '');
+    var _th = _q.get('token_hash');
+    if (_th) {
+      var _ty = _q.get('type') || 'invite';
+      sb.auth.verifyOtp({ type: _ty, token_hash: _th })
+        .then(function () { renderAuth('setpass'); })
+        .catch(function () { renderAuth('setpass'); });
+    } else {
+      setTimeout(function () { renderAuth('setpass'); }, 250);
+    }
   } else if (sb) {
     sb.auth.getSession().then(function (res) {
       var session = res && res.data && res.data.session;

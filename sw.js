@@ -1,5 +1,5 @@
 /* Sterith Workout — service worker */
-var CACHE = 'sterith-workout-v19';
+var CACHE = 'sterith-workout-v20';
 var ASSETS = [
   './',
   './index.html',
