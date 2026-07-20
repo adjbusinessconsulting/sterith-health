@@ -1439,6 +1439,8 @@
     }).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (j) { return { status: r.status, j: j }; });
     }).then(function (res) {
+      // Locked out (too many attempts) — surface the message, don't fall back.
+      if (res.status === 429) { var e = new Error((res.j && res.j.error) || 'Terlalu banyak percobaan. Coba lagi nanti.'); e.locked = true; throw e; }
       if (res.status === 200 && res.j && res.j.token_hash) {
         return sb.auth.verifyOtp({ type: 'magiclink', token_hash: res.j.token_hash }).then(function (v) {
           if (v.error) throw v.error; return true;
@@ -1893,9 +1895,9 @@
       .then(function () {
         return enterIfAccess(true);   // must be subscribed to Health; claim this device
       })
-      .catch(function () {
+      .catch(function (err) {
         if (btn) { btn.disabled = false; btn.innerHTML = 'Masuk <span class="arrow">&rarr;</span>'; }
-        toast('Email atau kata sandi salah');
+        toast(err && err.locked ? err.message : 'Email atau kata sandi salah');
       });
   });
   on('au-demo', function () {
