@@ -1418,7 +1418,7 @@
   var sb = null;
   try {
     if (window.supabase && window.STERITH_SUPABASE) {
-      sb = window.supabase.createClient(window.STERITH_SUPABASE.url, window.STERITH_SUPABASE.anon);
+      sb = window.supabase.createClient(window.STERITH_SUPABASE.url, window.STERITH_SUPABASE.anon, { auth: { persistSession: true, autoRefreshToken: true } });
     }
   } catch (e) { sb = null; }
 
