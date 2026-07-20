@@ -1550,12 +1550,13 @@
       var user = r && r.data && r.data.user; if (!user) return true;
       return Promise.all([
         sb.from('health_state').select('session_token').eq('user_id', user.id).maybeSingle(),
-        sb.from('tenants').select('status')   // RLS returns only their own tenant row
+        sb.from('tenants').select('status, suspended_apps')   // RLS returns only their own tenant row
       ]).then(function (arr) {
         var srv = arr[0] && arr[0].data && arr[0].data.session_token;
         var rows = arr[1] && arr[1].data;
-        var status = rows && rows[0] && rows[0].status;
-        if (status === 'suspended' || status === 'churn') { kickSuspended(); return false; }
+        var t = rows && rows[0];
+        var suspended = t && Array.isArray(t.suspended_apps) && t.suspended_apps.indexOf('health') !== -1;
+        if (suspended || (t && t.status === 'churn')) { kickSuspended(); return false; }
         if (srv && srv !== getLocalSessTok()) { kickOtherDevice(); return false; }
         return true;
       });
