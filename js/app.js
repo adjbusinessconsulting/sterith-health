@@ -1490,13 +1490,70 @@
       });
     }).catch(function () { return false; });
   }
+  // ── Single-device session ────────────────────────────────────────────────
+  // One account = one active device. Logging in on a new device writes a fresh
+  // session token to health_state.session_token; any other device notices the
+  // mismatch (on load, tab focus, or a periodic check) and signs itself out.
+  function newSessTok() {
+    try { return crypto.randomUUID ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2)); }
+    catch (e) { return Date.now() + '-' + Math.random().toString(36).slice(2); }
+  }
+  function getLocalSessTok() { try { return localStorage.getItem('sterith_sess_tok') || ''; } catch (e) { return ''; } }
+  function setLocalSessTok(t) { try { if (t) localStorage.setItem('sterith_sess_tok', t); else localStorage.removeItem('sterith_sess_tok'); } catch (e) {} }
+
+  // Claim this device as the active one (on explicit login / signup / set-password).
+  function claimSession() {
+    if (!sb) return Promise.resolve();
+    var tok = newSessTok();
+    setLocalSessTok(tok);
+    return sb.auth.getUser().then(function (r) {
+      var user = r && r.data && r.data.user; if (!user) return;
+      return sb.from('health_state').upsert({ user_id: user.id, session_token: tok }, { onConflict: 'user_id' });
+    }).catch(function () {});
+  }
+  // Returns Promise<boolean> — false means this device was superseded (and kicked).
+  function verifySession() {
+    if (!sb || isDemo() || !isAuthed()) return Promise.resolve(true);
+    return sb.auth.getUser().then(function (r) {
+      var user = r && r.data && r.data.user; if (!user) return true;
+      return sb.from('health_state').select('session_token').eq('user_id', user.id).maybeSingle().then(function (res) {
+        var srv = res && res.data && res.data.session_token;
+        if (srv && srv !== getLocalSessTok()) { kickOtherDevice(); return false; }
+        return true;
+      });
+    }).catch(function () { return true; });
+  }
+  function kickOtherDevice() {
+    stopSessionWatch();
+    setLocalSessTok('');
+    setAuthed(false);
+    if (sb) sb.auth.signOut();
+    renderAuth('login');
+    toast('Akun masuk di perangkat lain — Anda keluar dari perangkat ini.');
+  }
+  var _sessWatch = null;
+  function _onSessVis() { if (document.visibilityState === 'visible') verifySession(); }
+  function startSessionWatch() {
+    if (_sessWatch || isDemo()) return;
+    _sessWatch = setInterval(function () { verifySession(); }, 45000);
+    document.addEventListener('visibilitychange', _onSessVis);
+  }
+  function stopSessionWatch() {
+    if (_sessWatch) { clearInterval(_sessWatch); _sessWatch = null; }
+    document.removeEventListener('visibilitychange', _onSessVis);
+  }
+
   // Enter the app only if the user has Health access; otherwise sign out + gate.
-  function enterIfAccess() {
+  // claim=true → this device becomes the active one; false → verify it still is.
+  function enterIfAccess(claim) {
     return hasHealthAccess().then(function (ok) {
-      if (ok) { setDemo(false); setAuthed(true); return cloudLoad().then(function () { enterApp(); }); }
-      if (sb) sb.auth.signOut();
-      setAuthed(false);
-      renderAuth('noaccess');
+      if (!ok) { if (sb) sb.auth.signOut(); setAuthed(false); renderAuth('noaccess'); return; }
+      setDemo(false); setAuthed(true);
+      var pre = claim ? claimSession().then(function () { return true; }) : verifySession();
+      return pre.then(function (proceed) {
+        if (proceed === false) return;   // superseded by another device
+        return cloudLoad().then(function () { enterApp(); startSessionWatch(); });
+      });
     });
   }
 
@@ -1684,7 +1741,7 @@
         setDemo(false); setAuthed(true);
         var p = S.getProfile(); p.name = name; p.address = address; p.whatsapp = wa; S.saveProfile(p);
         _lastName = name;
-        return cloudPushNow().then(function () { renderAuth('thankyou'); });
+        return claimSession().then(function () { return cloudPushNow(); }).then(function () { renderAuth('thankyou'); });
       })
       .catch(function (err) {
         if (btn) { btn.disabled = false; btn.innerHTML = 'Daftar <span class="arrow">&rarr;</span>'; }
@@ -1705,7 +1762,7 @@
         if (res.error) throw res.error;
         try { history.replaceState(null, '', location.pathname); } catch (e) {}
         toast('Kata sandi tersimpan!');
-        return enterIfAccess();   // they were just granted Health at Confirm Payment
+        return enterIfAccess(true);   // just granted Health; claim this device
       })
       .catch(function (err) {
         if (btn) { btn.disabled = false; btn.innerHTML = 'Aktifkan Akun <span class="arrow">&rarr;</span>'; }
@@ -1724,7 +1781,7 @@
     sb.auth.signInWithPassword({ email: email, password: pass })
       .then(function (res) {
         if (res.error) throw res.error;
-        return enterIfAccess();   // must be subscribed to Health
+        return enterIfAccess(true);   // must be subscribed to Health; claim this device
       })
       .catch(function () {
         if (btn) { btn.disabled = false; btn.innerHTML = 'Masuk <span class="arrow">&rarr;</span>'; }
@@ -1741,6 +1798,7 @@
     if (!confirm('Keluar dari akun Anda?')) return;
     closeSheet();
     if (state.session) { state.session = null; } // don't leave an in-progress session behind the gate
+    stopSessionWatch(); setLocalSessTok('');
     setAuthed(false); setDemo(false);
     var done = function () { showAuth(); };
     if (sb) { sb.auth.signOut().then(done, done); } else { done(); }
@@ -1751,6 +1809,7 @@
     state.session = S.getDraft();
     state.tab = 'log';
     render();
+    startSessionWatch();   // enforce single-device (no-op in demo)
   }
 
   // ---- Demo data seeding (lets a customer explore a filled-in app instantly) ----
