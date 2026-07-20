@@ -1747,9 +1747,11 @@
       .then(function (res) {
         if (res.status !== 200 || !res.j || !res.j.ok) { throw new Error((res.j && res.j.error) || 'Gagal'); }
         try { history.replaceState(null, '', location.pathname); } catch (e) {}
-        toast('Kata sandi tersimpan!');
-        // Auto-login with the password just set.
-        return appAuthLogin(res.j.email, p1).then(function () { return enterIfAccess(true); });
+        toast('Kata sandi tersimpan! Silakan masuk.');
+        // Send them to login (not auto-login) so they confirm email + password work.
+        renderAuth('login');
+        var el = document.getElementById('au-email');
+        if (el && res.j.email) el.value = res.j.email;
       })
       .catch(function (err) {
         if (btn) { btn.disabled = false; btn.innerHTML = 'Aktifkan Akun <span class="arrow">&rarr;</span>'; }
