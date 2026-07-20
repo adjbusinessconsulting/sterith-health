@@ -1540,26 +1540,35 @@
       return sb.from('health_state').upsert({ user_id: user.id, session_token: tok }, { onConflict: 'user_id' });
     }).catch(function () {});
   }
-  // Returns Promise<boolean> — false means this device was superseded (and kicked).
+  // Returns Promise<boolean> — false means this device was kicked (other device or
+  // suspended). Also detects suspension from Master Office so an open session logs out.
   function verifySession() {
     if (!sb || isDemo() || !isAuthed()) return Promise.resolve(true);
     return sb.auth.getUser().then(function (r) {
       var user = r && r.data && r.data.user; if (!user) return true;
-      return sb.from('health_state').select('session_token').eq('user_id', user.id).maybeSingle().then(function (res) {
-        var srv = res && res.data && res.data.session_token;
+      return Promise.all([
+        sb.from('health_state').select('session_token').eq('user_id', user.id).maybeSingle(),
+        sb.from('tenants').select('status')   // RLS returns only their own tenant row
+      ]).then(function (arr) {
+        var srv = arr[0] && arr[0].data && arr[0].data.session_token;
+        var rows = arr[1] && arr[1].data;
+        var status = rows && rows[0] && rows[0].status;
+        if (status === 'suspended' || status === 'churn') { kickSuspended(); return false; }
         if (srv && srv !== getLocalSessTok()) { kickOtherDevice(); return false; }
         return true;
       });
     }).catch(function () { return true; });
   }
-  function kickOtherDevice() {
+  function _kick(msg) {
     stopSessionWatch();
     setLocalSessTok('');
     setAuthed(false);
     if (sb) sb.auth.signOut();
     renderAuth('login');
-    toast('Akun masuk di perangkat lain — Anda keluar dari perangkat ini.');
+    toast(msg);
   }
+  function kickOtherDevice() { _kick('Akun masuk di perangkat lain — Anda keluar dari perangkat ini.'); }
+  function kickSuspended() { _kick('Akses ditangguhkan. Hubungi Sterith.'); }
   var _sessWatch = null;
   function _onSessVis() { if (document.visibilityState === 'visible') verifySession(); }
   function startSessionWatch() {
