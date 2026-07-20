@@ -1730,17 +1730,43 @@
       '<h1 class="auth-title">Buat kata sandi Health</h1>' +
       '<p class="auth-sub">Buat kata sandi khusus untuk Sterith Health. Boleh sama atau beda dengan aplikasi Sterith Anda yang lain.</p>' +
       '<div class="auth-card">' +
+      '<div class="field"><label>Email Akun</label><div class="auth-input" style="opacity:0.7">' +
+      '<span class="ai-ic">' + svg('mail', 18) + '</span>' +
+      '<input class="input" id="au-email" type="email" value="memuat…" readonly disabled tabindex="-1" style="pointer-events:none;background:transparent"></div></div>' +
       '<div class="field"><label>Kata sandi</label><div class="auth-input"><span class="ai-ic">' + svg('lock', 18) + '</span>' +
       '<input class="input" id="au-pass" type="password" placeholder="Minimal 8 karakter" autocomplete="new-password">' +
       '<button class="ai-eye" data-act="au-eye" data-for="au-pass">' + svg('eye', 18) + '</button></div></div>' +
       '<div class="field"><label>Ulangi kata sandi</label><div class="auth-input"><span class="ai-ic">' + svg('lock', 18) + '</span>' +
       '<input class="input" id="au-pass2" type="password" placeholder="Ketik ulang kata sandi" autocomplete="new-password">' +
       '<button class="ai-eye" data-act="au-eye" data-for="au-pass2">' + svg('eye', 18) + '</button></div></div>' +
-      '<button class="btn btn-primary btn-block btn-lg" style="margin-top:18px" data-act="au-appsetup">Aktifkan Akun <span class="arrow">&rarr;</span></button>' +
+      '<button class="btn btn-primary btn-block btn-lg" style="margin-top:18px" data-act="au-appsetup">Buat Kata Sandi <span class="arrow">&rarr;</span></button>' +
       '</div>',
       'auth-setpass'
     );
+    // Show the registered email the setup link is for.
+    fetch(AUTH_BASE + '/api/app-auth/setup?token=' + encodeURIComponent(_appSetupToken))
+      .then(function (r) { return r.json().catch(function () { return {}; }); })
+      .then(function (j) { var el = document.getElementById('au-email'); if (el) el.value = (j && j.email) || ''; })
+      .catch(function () {});
   }
+  // Success screen after setting the Health password (mirrors POS).
+  var _setupEmail = '';
+  function renderAppSetupDone(email) {
+    _setupEmail = email || '';
+    authShell(
+      '<div class="ty"><div class="ty-check">' + svg('check', 40) + '</div>' +
+      '<div class="auth-eyebrow" style="text-align:center">Berhasil · Kata Sandi Dibuat</div>' +
+      '<h1 class="auth-title" style="text-align:center">Kata sandi Anda telah dibuat.</h1>' +
+      '<p class="auth-sub" style="text-align:center;margin:0 auto">Silakan masuk ke Sterith Health dengan kata sandi baru Anda.</p>' +
+      '<button class="btn btn-primary btn-block btn-lg" style="margin-top:26px" data-act="au-setup-login">Login ke Health <span class="arrow">&rarr;</span></button>' +
+      '</div>',
+      'auth-thankyou'
+    );
+  }
+  on('au-setup-login', function () {
+    renderAuth('login');
+    var el = document.getElementById('au-email'); if (el && _setupEmail) el.value = _setupEmail;
+  });
   on('au-appsetup', function () {
     var p1 = document.getElementById('au-pass').value;
     var p2 = document.getElementById('au-pass2').value;
@@ -1756,14 +1782,11 @@
       .then(function (res) {
         if (res.status !== 200 || !res.j || !res.j.ok) { throw new Error((res.j && res.j.error) || 'Gagal'); }
         try { history.replaceState(null, '', location.pathname); } catch (e) {}
-        toast('Kata sandi tersimpan! Silakan masuk.');
-        // Send them to login (not auto-login) so they confirm email + password work.
-        renderAuth('login');
-        var el = document.getElementById('au-email');
-        if (el && res.j.email) el.value = res.j.email;
+        // Success screen with a tick, then they log in to confirm it works.
+        renderAppSetupDone(res.j.email);
       })
       .catch(function (err) {
-        if (btn) { btn.disabled = false; btn.innerHTML = 'Aktifkan Akun <span class="arrow">&rarr;</span>'; }
+        if (btn) { btn.disabled = false; btn.innerHTML = 'Buat Kata Sandi <span class="arrow">&rarr;</span>'; }
         toast((err && err.message) || 'Gagal menyimpan');
       });
   });
