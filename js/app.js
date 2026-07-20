@@ -1426,6 +1426,30 @@
   // which posts to Master Office (request → payment → set-password link). Not in-app
   // signup. "Daftar" sends them there.
   var DAFTAR_URL = 'https://sterith.com/form.html?daftar=health';
+  var AUTH_BASE = 'https://masteroffice.sterith.com';
+
+  // New per-app auth: verify the Health password via Master Office, then redeem the
+  // returned magic-link token for a Supabase session. Falls back to the old Supabase
+  // password (migration) so existing users who haven't set a Health password still work.
+  function appAuthLogin(email, pass) {
+    if (!sb) return Promise.reject(new Error('no-conn'));
+    return fetch(AUTH_BASE + '/api/app-auth/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email, app: 'health', password: pass })
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) { return { status: r.status, j: j }; });
+    }).then(function (res) {
+      if (res.status === 200 && res.j && res.j.token_hash) {
+        return sb.auth.verifyOtp({ type: 'magiclink', token_hash: res.j.token_hash }).then(function (v) {
+          if (v.error) throw v.error; return true;
+        });
+      }
+      // No Health password set yet → try the legacy Supabase password.
+      return sb.auth.signInWithPassword({ email: email, password: pass }).then(function (s) {
+        if (s.error) throw s.error; return true;
+      });
+    });
+  }
 
   // A set-password link (from Confirm Payment in Master Office) lands here with an
   // invite/recovery token — detect it so boot shows the "Atur Kata Sandi" screen.
@@ -1436,6 +1460,11 @@
       var type = h.get('type') || q.get('type');
       return type === 'recovery' || type === 'invite' || h.has('access_token') || q.has('token_hash') || q.has('code');
     } catch (e) { return false; }
+  })();
+  // New per-app setup link from Master Office: ?setup_token=… → "Buat Kata Sandi".
+  var _appSetupToken = (function () {
+    try { return new URLSearchParams(location.search || '').get('setup_token') || ''; }
+    catch (e) { return ''; }
   })();
 
   function isDemo() { return localStorage.getItem('sterith_demo') === '1'; }
@@ -1575,6 +1604,7 @@
   function renderAuth(mode) {
     if (mode === 'thankyou') return renderThankYou();
     if (mode === 'register') return renderRegister();
+    if (mode === 'appsetup') return renderAppSetup();
     if (mode === 'setpass') return renderSetPass();
     if (mode === 'forgot') return renderForgot();
     if (mode === 'noaccess') return renderNoAccess();
@@ -1683,6 +1713,50 @@
     });
   }
 
+  // New per-app "Buat Kata Sandi" screen (from a ?setup_token link). Sets THIS app's
+  // own password via Master Office, then logs in.
+  function renderAppSetup() {
+    authShell(
+      '<div class="auth-eyebrow">Sterith Health · Kata Sandi</div>' +
+      '<h1 class="auth-title">Buat kata sandi Health</h1>' +
+      '<p class="auth-sub">Buat kata sandi khusus untuk Sterith Health. Boleh sama atau beda dengan aplikasi Sterith Anda yang lain.</p>' +
+      '<div class="auth-card">' +
+      '<div class="field"><label>Kata sandi</label><div class="auth-input"><span class="ai-ic">' + svg('lock', 18) + '</span>' +
+      '<input class="input" id="au-pass" type="password" placeholder="Minimal 8 karakter" autocomplete="new-password">' +
+      '<button class="ai-eye" data-act="au-eye" data-for="au-pass">' + svg('eye', 18) + '</button></div></div>' +
+      '<div class="field"><label>Ulangi kata sandi</label><div class="auth-input"><span class="ai-ic">' + svg('lock', 18) + '</span>' +
+      '<input class="input" id="au-pass2" type="password" placeholder="Ketik ulang kata sandi" autocomplete="new-password">' +
+      '<button class="ai-eye" data-act="au-eye" data-for="au-pass2">' + svg('eye', 18) + '</button></div></div>' +
+      '<button class="btn btn-primary btn-block btn-lg" style="margin-top:18px" data-act="au-appsetup">Aktifkan Akun <span class="arrow">&rarr;</span></button>' +
+      '</div>',
+      'auth-setpass'
+    );
+  }
+  on('au-appsetup', function () {
+    var p1 = document.getElementById('au-pass').value;
+    var p2 = document.getElementById('au-pass2').value;
+    if (p1.length < 8) return toast('Kata sandi minimal 8 karakter');
+    if (p1 !== p2) return toast('Kata sandi tidak cocok');
+    if (!_appSetupToken) return toast('Tautan tidak valid.');
+    var btn = document.querySelector('[data-act="au-appsetup"]');
+    if (btn) { btn.disabled = true; btn.textContent = 'Menyimpan…'; }
+    fetch(AUTH_BASE + '/api/app-auth/setup', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: _appSetupToken, password: p1 })
+    }).then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { status: r.status, j: j }; }); })
+      .then(function (res) {
+        if (res.status !== 200 || !res.j || !res.j.ok) { throw new Error((res.j && res.j.error) || 'Gagal'); }
+        try { history.replaceState(null, '', location.pathname); } catch (e) {}
+        toast('Kata sandi tersimpan!');
+        // Auto-login with the password just set.
+        return appAuthLogin(res.j.email, p1).then(function () { return enterIfAccess(true); });
+      })
+      .catch(function (err) {
+        if (btn) { btn.disabled = false; btn.innerHTML = 'Aktifkan Akun <span class="arrow">&rarr;</span>'; }
+        toast((err && err.message) || 'Gagal menyimpan');
+      });
+  });
+
   function renderThankYou() {
     authShell(
       '<div class="ty"><div class="ty-check">' + svg('check', 40) + '</div>' +
@@ -1778,9 +1852,8 @@
     if (!sb) return toast('Tidak ada koneksi. Coba lagi.');
     var btn = document.querySelector('[data-act="au-login"]');
     if (btn) { btn.disabled = true; btn.textContent = 'Masuk…'; }
-    sb.auth.signInWithPassword({ email: email, password: pass })
-      .then(function (res) {
-        if (res.error) throw res.error;
+    appAuthLogin(email, pass)
+      .then(function () {
         return enterIfAccess(true);   // must be subscribed to Health; claim this device
       })
       .catch(function () {
@@ -1943,6 +2016,9 @@
     seedDemo();
     setDemo(true); setAuthed(true);
     enterApp();
+  } else if (sb && _appSetupToken) {
+    // New per-app setup link — set Health's own password.
+    renderAuth('appsetup');
   } else if (sb && _setpassFlow) {
     // Arrived via a set-password link. The clean token_hash link (sterith.com, no
     // supabase) needs an explicit verifyOtp to establish the session; the older
