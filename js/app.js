@@ -1819,9 +1819,12 @@
     if (!sb) return toast('Tidak ada koneksi. Coba lagi.');
     var btn = document.querySelector('[data-act="au-forgot"]');
     if (btn) { btn.disabled = true; btn.textContent = 'Mengirim…'; }
-    sb.auth.resetPasswordForEmail(email, { redirectTo: 'https://health.sterith.com' })
-      .then(function () {
-        toast('Jika email terdaftar, tautan reset sudah dikirim. Cek inbox / spam.');
+    // Issue a fresh Health setup link (resets the Health password specifically).
+    fetch(AUTH_BASE + '/api/app-auth/forgot', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email, app: 'health' })
+    }).then(function () {
+        toast('Jika email terdaftar, tautan buat kata sandi baru sudah dikirim. Cek inbox / spam.');
         renderAuth('login');
       })
       .catch(function () {
