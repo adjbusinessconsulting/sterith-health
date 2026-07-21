@@ -213,7 +213,11 @@ textarea.input { resize:vertical; min-height:70px; line-height:1.5; }
 .ex-block .exb-head { display:flex; align-items:center; justify-content:space-between; padding:13px 15px; background:var(--cardAlt); border-bottom:1px solid #eee9dc; }
 .ex-block .exb-head .name { font:500 16px/1.15 'EB Garamond',serif; }
 .ex-block .exb-head .cat { font:600 9.5px/1 'Hanken Grotesk'; letter-spacing:.12em; text-transform:uppercase; color:var(--goldDeep); margin-top:4px; }
-.ex-block .exb-head .kebab { color:var(--danger); background:none; border:none; width:30px; height:30px; }
+.ex-tools { display:flex; align-items:center; gap:2px; flex-shrink:0; }
+.ex-tools .kebab { color:var(--muted, #8a8578); background:none; border:none; width:30px; height:30px; padding:0; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+.ex-tools .kebab[data-act="rm-exercise"] { color:var(--danger); }
+.ex-tools .kebab:disabled { opacity:.25; pointer-events:none; }
+.ex-tools .del { color:var(--danger); background:none; border:none; width:30px; height:30px; padding:0; cursor:pointer; }
 .set-table { width:100%; }
 .set-head, .set-line { display:grid; grid-template-columns:34px 1fr 1fr 40px; gap:10px; align-items:center; padding:8px 14px; }
 .set-head { background:transparent; }

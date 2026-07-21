@@ -26,6 +26,9 @@
     stats:'<path d="M5 20V10M12 20V4M19 20v-7"/>',
     profile:'<circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6"/>',
     plus:'<path d="M12 5v14M5 12h14"/>',
+    up:'<path d="M6 15l6-6 6 6"/>',
+    down:'<path d="M6 9l6 6 6-6"/>',
+    swap:'<path d="M7 4v13m0-13L4 7m3-3l3 3M17 20V7m0 13l-3-3m3 3l3-3"/>',
     chev:'<path d="M9 6l6 6-6 6"/>',
     chevRight:'<path d="M9 6l6 6-6 6"/>',
     close:'<path d="M6 6l12 12M18 6L6 18"/>',
@@ -599,10 +602,16 @@
 
     s.exercises.forEach(function (ex, ei) {
       var lp = lastPerformance(ex.name);
+      var lastEi = s.exercises.length - 1;
       html += '<div class="ex-block">' +
         '<div class="exb-head"><div><div class="name">' + esc(ex.name) + '</div>' +
         '<div class="cat">' + esc(ex.category || '') + (lp ? ' · <span style="color:var(--muted2)">terakhir ' + shortDate(lp.ts) + '</span>' : '') + '</div></div>' +
-        '<button class="kebab" data-act="rm-exercise" data-ei="' + ei + '">' + svg('trash', 18) + '</button></div>';
+        '<div class="ex-tools">' +
+        '<button class="kebab" data-act="move-ex-up" data-ei="' + ei + '"' + (ei === 0 ? ' disabled' : '') + ' aria-label="Naikkan">' + svg('up', 18) + '</button>' +
+        '<button class="kebab" data-act="move-ex-down" data-ei="' + ei + '"' + (ei === lastEi ? ' disabled' : '') + ' aria-label="Turunkan">' + svg('down', 18) + '</button>' +
+        '<button class="kebab" data-act="replace-exercise" data-ei="' + ei + '" aria-label="Ganti">' + svg('swap', 18) + '</button>' +
+        '<button class="kebab" data-act="rm-exercise" data-ei="' + ei + '" aria-label="Hapus">' + svg('trash', 18) + '</button>' +
+        '</div></div>';
       html += '<div class="set-table"><div class="set-head"><span>Set</span><span>' + (unit()) + '</span><span>Reps</span><span></span></div>';
       ex.sets.forEach(function (st, si) {
         var g = ghostFor(lp, si);
@@ -660,6 +669,31 @@
   on('rm-exercise', function (t) {
     if (!confirm('Remove this exercise from the workout?')) return;
     state.session.exercises.splice(+t.dataset.ei, 1); saveSession(); render();
+  });
+  function moveExercise(ei, dir) {
+    var arr = state.session.exercises, j = ei + dir;
+    if (j < 0 || j >= arr.length) return;
+    var tmp = arr[ei]; arr[ei] = arr[j]; arr[j] = tmp;
+    saveSession(); render();
+  }
+  on('move-ex-up', function (t) { moveExercise(+t.dataset.ei, -1); });
+  on('move-ex-down', function (t) { moveExercise(+t.dataset.ei, 1); });
+  on('replace-exercise', function (t) {
+    var ei = +t.dataset.ei;
+    openPicker(true, function (chosen) {
+      var e = chosen[0];
+      if (e) {
+        var repl = sessionExercise(e);
+        var old = state.session.exercises[ei];
+        // keep however many set rows the user had already built
+        if (old && old.sets && old.sets.length > repl.sets.length) {
+          while (repl.sets.length < old.sets.length) repl.sets.push(blankSet());
+        }
+        state.session.exercises[ei] = repl;
+        saveSession();
+      }
+      closeSheet(); render();
+    }, { single: true, title: 'Ganti latihan', confirmLabel: 'Ganti' });
   });
   on('add-exercise-session', function () { openPicker(true); });
   on('discard-session', function () {
@@ -743,8 +777,10 @@
   on('noop', function () {});
 
   // ---- Exercise picker (choose exercises for session or routine) ----
-  function openPicker(forSession, onDone) {
-    state.picker = { open: true, selected: {}, forSession: forSession, filter: 'all', search: '', onDone: onDone };
+  function openPicker(forSession, onDone, opts) {
+    opts = opts || {};
+    state.picker = { open: true, selected: {}, forSession: forSession, filter: 'all', search: '', onDone: onDone,
+      single: !!opts.single, title: opts.title, confirmLabel: opts.confirmLabel };
     renderPicker();
   }
   function renderPicker() {
@@ -769,7 +805,10 @@
     if (!rows) rows = '<div class="muted-line" style="padding:20px 0;text-align:center">No exercises found.</div>';
 
     var count = Object.keys(pk.selected).length;
-    var html = '<div class="sheet-head"><div><div class="eyebrow">Exercise library</div><h2>Add exercises</h2></div>' +
+    var confirmLabel = pk.confirmLabel
+      ? esc(pk.confirmLabel)
+      : 'Add ' + (count ? count + ' ' : '') + 'exercise' + (count === 1 ? '' : 's');
+    var html = '<div class="sheet-head"><div><div class="eyebrow">Exercise library</div><h2>' + esc(pk.title || 'Add exercises') + '</h2></div>' +
       '<button class="close" data-act="close-picker">' + svg('close') + '</button></div>' +
       '<div class="sheet-body">' +
       '<input class="input" id="pick-search" placeholder="Search exercises…" data-act="noop" value="' + esc(pk.search) + '">' +
@@ -778,7 +817,7 @@
       '<div class="spacer"></div><button class="btn btn-gold btn-block" data-act="quick-add-exercise">' + svg('plus', 16) + ' New exercise / category</button>' +
       '</div>' +
       '<div class="sheet-foot"><button class="btn btn-secondary" data-act="close-picker">Cancel</button>' +
-      '<button class="btn btn-primary" data-act="pick-confirm">Add ' + (count ? count + ' ' : '') + 'exercise' + (count === 1 ? '' : 's') + ' <span class="arrow">&rarr;</span></button></div>';
+      '<button class="btn btn-primary" data-act="pick-confirm">' + confirmLabel + ' <span class="arrow">&rarr;</span></button></div>';
     openSheet(html);
     var si = document.getElementById('pick-search');
     if (si) si.addEventListener('input', function () { state.picker.search = si.value; refreshPickerRows(); });
@@ -859,13 +898,22 @@
   on('pick-filter', function (t) { state.picker.filter = t.dataset.id; refreshPickerRows(); });
   on('pick-toggle', function (t) {
     var id = t.dataset.id, pk = state.picker;
-    if (pk.selected[id]) delete pk.selected[id];
-    else pk.selected[id] = { exId: id, name: t.dataset.name, category: t.dataset.cat, categoryType: t.dataset.type };
-    t.classList.toggle('sel');
-    // update footer count without full rerender
+    var wasSel = !!pk.selected[id];
+    if (pk.single) {
+      // single-select (replace): only one exercise at a time
+      pk.selected = {};
+      var rows = sheetSlot.querySelectorAll('.pick.sel');
+      for (var i = 0; i < rows.length; i++) rows[i].classList.remove('sel');
+      if (!wasSel) { pk.selected[id] = { exId: id, name: t.dataset.name, category: t.dataset.cat, categoryType: t.dataset.type }; t.classList.add('sel'); }
+    } else {
+      if (wasSel) delete pk.selected[id];
+      else pk.selected[id] = { exId: id, name: t.dataset.name, category: t.dataset.cat, categoryType: t.dataset.type };
+      t.classList.toggle('sel');
+    }
+    // update footer count without full rerender (keep custom label for single mode)
     var btn = sheetSlot.querySelector('[data-act="pick-confirm"]');
     var count = Object.keys(pk.selected).length;
-    if (btn) btn.innerHTML = 'Add ' + (count ? count + ' ' : '') + 'exercise' + (count === 1 ? '' : 's') + ' <span class="arrow">&rarr;</span>';
+    if (btn && !pk.confirmLabel) btn.innerHTML = 'Add ' + (count ? count + ' ' : '') + 'exercise' + (count === 1 ? '' : 's') + ' <span class="arrow">&rarr;</span>';
   });
   on('pick-confirm', function () {
     var pk = state.picker;
@@ -980,10 +1028,16 @@
   }
   function renderRoutineEditor() {
     var r = _routineDraft;
+    var lastI = r.exercises.length - 1;
     var exHtml = r.exercises.length ? r.exercises.map(function (e, i) {
       return '<div class="row" style="margin-bottom:8px"><div class="grow"><div class="rtitle" style="font-size:13.5px">' + esc(e.name) + '</div>' +
         '<div class="rmeta">' + esc(e.category || '') + '</div></div>' +
-        '<button class="del" data-act="rt-rm" data-i="' + i + '">' + svg('trash', 16) + '</button></div>';
+        '<div class="ex-tools">' +
+        '<button class="kebab" data-act="rt-up" data-i="' + i + '"' + (i === 0 ? ' disabled' : '') + ' aria-label="Naikkan">' + svg('up', 16) + '</button>' +
+        '<button class="kebab" data-act="rt-down" data-i="' + i + '"' + (i === lastI ? ' disabled' : '') + ' aria-label="Turunkan">' + svg('down', 16) + '</button>' +
+        '<button class="kebab" data-act="rt-replace" data-i="' + i + '" aria-label="Ganti">' + svg('swap', 16) + '</button>' +
+        '<button class="del" data-act="rt-rm" data-i="' + i + '" aria-label="Hapus">' + svg('trash', 16) + '</button>' +
+        '</div></div>';
     }).join('') : '<div class="muted-line" style="padding:6px 0 12px">No exercises added yet.</div>';
 
     var existing = S.getRoutines().some(function (x) { return x.id === r.id; });
@@ -1010,6 +1064,24 @@
     });
   });
   on('rt-rm', function (t) { _routineDraft.exercises.splice(+t.dataset.i, 1); renderRoutineEditor(); });
+  function rtMove(i, dir) {
+    var nm = document.getElementById('rt-name'); if (nm) _routineDraft.name = nm.value;
+    var arr = _routineDraft.exercises, j = i + dir;
+    if (j < 0 || j >= arr.length) return;
+    var tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
+    renderRoutineEditor();
+  }
+  on('rt-up', function (t) { rtMove(+t.dataset.i, -1); });
+  on('rt-down', function (t) { rtMove(+t.dataset.i, 1); });
+  on('rt-replace', function (t) {
+    var i = +t.dataset.i;
+    var nm = document.getElementById('rt-name'); if (nm) _routineDraft.name = nm.value;
+    openPicker(false, function (chosen) {
+      var e = chosen[0];
+      if (e) _routineDraft.exercises[i] = { exId: e.exId, name: e.name, category: e.category, categoryType: e.categoryType };
+      renderRoutineEditor();
+    }, { single: true, title: 'Ganti latihan', confirmLabel: 'Ganti' });
+  });
   on('rt-save', function () {
     var nm = document.getElementById('rt-name'); if (nm) _routineDraft.name = nm.value;
     if (!_routineDraft.name.trim()) { toast('Enter a routine name'); return; }
