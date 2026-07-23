@@ -783,14 +783,9 @@
       single: !!opts.single, title: opts.title, confirmLabel: opts.confirmLabel };
     renderPicker();
   }
-  function renderPicker() {
-    var lib = S.getLibrary();
-    var pk = state.picker;
-    var cats = [{ id: 'all', name: 'All' }].concat(lib.map(function (c) { return { id: c.id, name: c.name }; }));
-    var chips = cats.map(function (c) {
-      return '<button class="chip' + (pk.filter === c.id ? ' active' : '') + '" data-act="pick-filter" data-id="' + c.id + '">' + esc(c.name) + '</button>';
-    }).join('');
-
+  // Just the filtered/searched rows — split out so category + search can swap ONLY
+  // this list in place (no full-sheet rebuild = no flash/scroll jump).
+  function pickRowsHTML(lib, pk) {
     var rows = '';
     lib.forEach(function (cat) {
       if (pk.filter !== 'all' && pk.filter !== cat.id) return;
@@ -803,6 +798,16 @@
       });
     });
     if (!rows) rows = '<div class="muted-line" style="padding:20px 0;text-align:center">No exercises found.</div>';
+    return rows;
+  }
+  function renderPicker() {
+    var lib = S.getLibrary();
+    var pk = state.picker;
+    var cats = [{ id: 'all', name: 'All' }].concat(lib.map(function (c) { return { id: c.id, name: c.name }; }));
+    var chips = cats.map(function (c) {
+      return '<button class="chip' + (pk.filter === c.id ? ' active' : '') + '" data-act="pick-filter" data-id="' + c.id + '">' + esc(c.name) + '</button>';
+    }).join('');
+    var rows = '<div id="pick-list">' + pickRowsHTML(lib, pk) + '</div>';
 
     var count = Object.keys(pk.selected).length;
     var confirmLabel = pk.confirmLabel
@@ -823,13 +828,10 @@
     if (si) si.addEventListener('input', function () { state.picker.search = si.value; refreshPickerRows(); });
   }
   function refreshPickerRows() {
-    // lightweight re-render of the sheet keeping focus in search
-    var body = sheetSlot.querySelector('.sheet-body');
-    var search = state.picker.search;
-    var scroll = body ? body.scrollTop : 0;
-    renderPicker();
-    var si = document.getElementById('pick-search');
-    if (si) { si.value = search; si.focus(); }
+    // Swap ONLY the list, so the search input keeps focus and the sheet doesn't jump.
+    var listEl = document.getElementById('pick-list');
+    if (!listEl) { renderPicker(); return; }
+    listEl.innerHTML = pickRowsHTML(S.getLibrary(), state.picker);
   }
   // ---- Metric picker (Statistics → Tracker "Lacak") — on-brand sheet ----
   function openMetricPicker() {
@@ -895,7 +897,19 @@
   on('mpick-choose', function (t) { state.trackMetric = t.dataset.value; closeSheet(); updateTracker(); });
 
   on('close-picker', function () { state.picker.open = false; closeSheet(); });
-  on('pick-filter', function (t) { state.picker.filter = t.dataset.id; refreshPickerRows(); });
+  on('pick-filter', function (t) {
+    var filter = t.dataset.id;
+    if (filter === state.picker.filter) return;
+    state.picker.filter = filter;
+    var listEl = document.getElementById('pick-list');
+    if (!listEl) { renderPicker(); return; }
+    var chipEls = sheetSlot.querySelectorAll('.chips .chip[data-act="pick-filter"]');
+    for (var i = 0; i < chipEls.length; i++) chipEls[i].classList.toggle('active', chipEls[i].dataset.id === filter);
+    listEl.innerHTML = pickRowsHTML(S.getLibrary(), state.picker);
+    listEl.style.transition = 'none'; listEl.style.opacity = '0'; listEl.style.transform = 'translateY(4px)';
+    void listEl.offsetHeight;   // reflow so the fade-in animates
+    listEl.style.transition = 'opacity .18s ease, transform .18s ease'; listEl.style.opacity = '1'; listEl.style.transform = 'none';
+  });
   on('pick-toggle', function (t) {
     var id = t.dataset.id, pk = state.picker;
     var wasSel = !!pk.selected[id];
@@ -978,12 +992,9 @@
 
   // ---- Library manager ----
   on('open-library', function () { renderLibraryManager(); });
-  function renderLibraryManager(filter) {
-    var lib = S.getLibrary();
-    filter = filter || state.libFilter;
-    state.libFilter = filter;
-    var chips = [{ id: 'all', name: 'All' }].concat(lib.map(function (c) { return { id: c.id, name: c.name }; }))
-      .map(function (c) { return '<button class="chip' + (filter === c.id ? ' active' : '') + '" data-act="lib-filter" data-id="' + c.id + '">' + esc(c.name) + '</button>'; }).join('');
+  // Just the filtered exercise rows — split out so switching categories can swap
+  // ONLY this list (see 'lib-filter'), instead of rebuilding the whole sheet.
+  function libListHTML(lib, filter) {
     var body = '';
     lib.forEach(function (cat) {
       if (filter !== 'all' && filter !== cat.id) return;
@@ -995,14 +1006,41 @@
           '<button class="del" data-act="del-exercise" data-cat="' + cat.id + '" data-id="' + ex.id + '">' + svg('trash', 16) + '</button></div>';
       });
     });
+    return body;
+  }
+  function renderLibraryManager(filter) {
+    var lib = S.getLibrary();
+    filter = filter || state.libFilter;
+    state.libFilter = filter;
+    var chips = [{ id: 'all', name: 'All' }].concat(lib.map(function (c) { return { id: c.id, name: c.name }; }))
+      .map(function (c) { return '<button class="chip' + (filter === c.id ? ' active' : '') + '" data-act="lib-filter" data-id="' + c.id + '">' + esc(c.name) + '</button>'; }).join('');
     var html = '<div class="sheet-head"><div><div class="eyebrow">Manage</div><h2>Exercise library</h2></div>' +
       '<button class="close" data-act="close-sheet">' + svg('close') + '</button></div>' +
-      '<div class="sheet-body"><div class="chips">' + chips + '</div>' + body +
+      '<div class="sheet-body"><div class="chips">' + chips + '</div>' +
+      '<div id="lib-list">' + libListHTML(lib, filter) + '</div>' +
       '<div class="spacer"></div><button class="btn btn-gold btn-block" data-act="lib-add">' + svg('plus', 16) + ' Add exercise / category</button>' +
       '<div class="spacer"></div></div>';
     openSheet(html);
   }
-  on('lib-filter', function (t) { renderLibraryManager(t.dataset.id); });
+  // Switch category in place — swap only the list + toggle the active chip, then
+  // fade the new list in. No full-sheet rebuild, so there's no flash or scroll jump.
+  on('lib-filter', function (t) {
+    var filter = t.dataset.id;
+    if (filter === state.libFilter) return;
+    state.libFilter = filter;
+    var listEl = document.getElementById('lib-list');
+    if (!listEl) { renderLibraryManager(filter); return; }
+    var chipEls = sheetSlot.querySelectorAll('.chips .chip[data-act="lib-filter"]');
+    for (var i = 0; i < chipEls.length; i++) chipEls[i].classList.toggle('active', chipEls[i].dataset.id === filter);
+    listEl.innerHTML = libListHTML(S.getLibrary(), filter);
+    listEl.style.transition = 'none';
+    listEl.style.opacity = '0';
+    listEl.style.transform = 'translateY(4px)';
+    void listEl.offsetHeight;   // reflow so the fade-in actually animates
+    listEl.style.transition = 'opacity .18s ease, transform .18s ease';
+    listEl.style.opacity = '1';
+    listEl.style.transform = 'none';
+  });
   on('lib-add', function () { openAddExercise(function () { renderLibraryManager(); }); });
   on('del-exercise', function (t) {
     var lib = S.getLibrary();
