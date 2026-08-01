@@ -12,7 +12,6 @@
     trackMetric: 'bodyweight',   // 'bodyweight' | 'ex:<exercise name>'
     trackPeriod: 'month',        // week | month | 3month | all | range
     trackRange: null,            // {from, to} epoch ms for custom range
-    _sessionTimer: null
   };
 
   var view = document.getElementById('view');
@@ -127,9 +126,8 @@
     var sameView = key === _renderKey;
     var prevScroll = window.scrollY;
 
-    if (state.session && state.tab === 'log') { view.innerHTML = topbar('Workout', 'IN PROGRESS · ' + (state.session.name || 'Session')) + renderSession(); startSessionTimer(); }
+    if (state.session && state.tab === 'log') { view.innerHTML = topbar('Workout', 'IN PROGRESS · ' + (state.session.name || 'Session')) + renderSession(); }
     else {
-      stopSessionTimer();
       if (state.tab === 'log') view.innerHTML = topbar('Log', logEyebrow()) + renderLog();
       else if (state.tab === 'routines') view.innerHTML = topbar('Routines', 'YOUR SPLITS') + renderRoutines();
       else if (state.tab === 'stats') view.innerHTML = topbar('Statistics', 'YOUR NUMBERS') + renderStats();
@@ -592,9 +590,11 @@
   function renderSession() {
     var s = state.session;
     var html = '<div class="screen">';
-    html += '<div class="session-timer"><div><div class="st-label">Elapsed</div>' +
-      '<div class="st-time num" id="sess-clock">' + mmss((Date.now() - s.startedAt) / 1000) + '</div>' +
-      '<div class="st-sub">' + s.exercises.length + ' exercise' + (s.exercises.length === 1 ? '' : 's') + ' · started ' + clockStr(s.startedAt) + '</div></div>' +
+    // No running clock: a workout is bracketed by when it started and when you
+    // say it ended, so the header states the start rather than counting at you.
+    html += '<div class="session-timer"><div><div class="st-label">Started</div>' +
+      '<div class="st-time num">' + clockStr(s.startedAt) + '</div>' +
+      '<div class="st-sub">' + s.exercises.length + ' exercise' + (s.exercises.length === 1 ? '' : 's') + '</div></div>' +
       '<button class="finish" data-act="finish-session">Finish</button></div>';
 
     // editable name
@@ -702,6 +702,8 @@
   });
   on('finish-session', function () {
     var s = state.session;
+    // Finishing is what sets the end time, so make it deliberate.
+    if (!confirm('Finish workout? Started ' + clockStr(s.startedAt) + '.')) return;
     // drop fully-empty exercises/sets
     s.exercises.forEach(function (ex) {
       ex.sets = ex.sets.filter(function (st) { return st.weight !== '' || st.reps !== '' || st.done; });
@@ -717,15 +719,6 @@
     toast('Workout saved');
   });
 
-  function startSessionTimer() {
-    stopSessionTimer();
-    state._sessionTimer = setInterval(function () {
-      if (!state.session) return stopSessionTimer();
-      var el = document.getElementById('sess-clock');
-      if (el) el.textContent = mmss((Date.now() - state.session.startedAt) / 1000);
-    }, 1000);
-  }
-  function stopSessionTimer() { if (state._sessionTimer) { clearInterval(state._sessionTimer); state._sessionTimer = null; } }
 
   // ---- start flows ----
   on('start-empty', function () { closeSheet(); state.session = newSession('Workout', []); saveSession(); state.tab = 'log'; render(); openPicker(true); });
