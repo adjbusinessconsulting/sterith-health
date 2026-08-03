@@ -1,5 +1,5 @@
 /* Sterith Workout — service worker */
-var CACHE = 'sterith-workout-v33';
+var CACHE = 'sterith-workout-v34';
 var ASSETS = [
   './',
   './index.html',
@@ -10,6 +10,8 @@ var ASSETS = [
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',
+  './icons/icon-v2-512.png',
+  './icons/icon-v2-maskable-512.png',
   './assets/logo-dark.png',
   './assets/logo-light.png'
 ];
