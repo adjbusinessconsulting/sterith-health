@@ -341,15 +341,6 @@ textarea.input { resize:vertical; min-height:70px; line-height:1.5; }
   background:var(--ink); color:#fff; padding:11px 18px; border-radius:12px;
   font:600 13px 'Hanken Grotesk'; box-shadow:0 12px 30px rgba(15,20,30,.3); animation:pop .2s ease;
 }
-/* ---- Launch splash ---- */
-#splash {
-  position:fixed; inset:0; z-index:100; background:var(--ink);
-  display:flex; align-items:center; justify-content:center;
-  transition:opacity .45s ease; padding:40px;
-}
-#splash img { width:min(64%, 300px); height:auto; animation:fadeUp .5s ease; }
-#splash.gone { opacity:0; pointer-events:none; }
-
 /* ---- Profile brand lockup ---- */
 .brand-lockup { display:flex; justify-content:center; margin:26px 0 8px; }
 .brand-lockup img { width:min(52%, 200px); height:auto; opacity:.92; }

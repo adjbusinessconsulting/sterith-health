@@ -2788,8 +2788,8 @@
   // ============================================================ BOOT =========
   buildNav();
   render();
-  // Decide the gate from the real Supabase session (async). The launch splash
-  // covers this brief check. Demo mode is local-only.
+  // Decide the gate from the real Supabase session (async) — the OS launch
+  // screen covers this brief check. Demo mode is local-only.
   // Demo never auto-resumes — it's only entered by tapping "Coba demo" in-session.
   setDemo(false);
   // Auto-enter demo when opened with ?demo=true (e.g. the website preview iframe).
@@ -2824,14 +2824,6 @@
   } else {
     showAuth();
   }
-
-  // fade out launch splash once the app is up
-  (function () {
-    var sp = document.getElementById('splash');
-    if (!sp) return;
-    setTimeout(function () { sp.classList.add('gone'); }, 1050);
-    setTimeout(function () { if (sp.parentNode) sp.parentNode.removeChild(sp); }, 1550);
-  })();
 
   // service worker + "update available" prompt
   if ('serviceWorker' in navigator) {
