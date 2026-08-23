@@ -12,6 +12,7 @@
     trackMetric: 'bodyweight',   // 'bodyweight' | 'ex:<exercise name>'
     trackPeriod: 'month',        // week | month | 3month | all | range
     trackRange: null,            // {from, to} epoch ms for custom range
+    nutDay: null,                // 'YYYY-MM-DD' day shown in the Nutrition tab
   };
 
   var view = document.getElementById('view');
@@ -49,7 +50,8 @@
     chat:'<path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>',
     phone:'<path d="M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2z"/>',
     camera:'<path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 011 1v9a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z"/><circle cx="12" cy="13" r="3.2"/>',
-    checkin:'<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>'
+    checkin:'<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>',
+    nutrition:'<path d="M12 21c-3.3 0-6-3.6-6-8 0-3 1.8-5 4-5 1 0 1.6.4 2 .7.4-.3 1-.7 2-.7 2.2 0 4 2 4 5 0 4.4-2.7 8-6 8z"/><path d="M12 8.7c0-2 1.2-3.7 3-4.2"/>'
   };
   function svg(name, w) {
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"' +
@@ -131,6 +133,7 @@
       if (state.tab === 'log') view.innerHTML = topbar('Log', logEyebrow()) + renderLog();
       else if (state.tab === 'routines') view.innerHTML = topbar('Routines', 'YOUR SPLITS') + renderRoutines();
       else if (state.tab === 'stats') view.innerHTML = topbar('Statistics', 'YOUR NUMBERS') + renderStats();
+      else if (state.tab === 'nutrition') view.innerHTML = topbar('Nutrition', 'MAKANAN & TARGET HARIAN') + renderNutrition();
       else if (state.tab === 'profile') view.innerHTML = topbar('Profile', 'STERITH ATHLETE') + renderProfile();
     }
     updateNav();
@@ -1440,7 +1443,8 @@
   }
   on('reset-data', function () {
     if (!confirm('Erase ALL workouts, routines, weight logs and profile? This cannot be undone.')) return;
-    ['sterith_library', 'sterith_routines', 'sterith_logs', 'sterith_weight', 'sterith_checkins', 'sterith_profile', 'sterith_settings', 'sterith_session_draft']
+    ['sterith_library', 'sterith_routines', 'sterith_logs', 'sterith_weight', 'sterith_checkins',
+      'sterith_foods', 'sterith_meals', 'sterith_foodlog', 'sterith_profile', 'sterith_settings', 'sterith_session_draft']
       .forEach(function (k) { localStorage.removeItem(k); });
     state.session = null; closeSheet(); state.tab = 'profile'; render(); toast('All data reset');
   });
@@ -1488,11 +1492,593 @@
     saveSession(); closeSheet(); state.tab = 'log'; render();
   });
 
+  // ============================================================ NUTRITION ====
+  // One tab that answers "what do I still have to eat today?".
+  //  · Targets are typed in by hand (berat, lemak tubuh, faktor per makro,
+  //    target kalori) — nothing is guessed from a hidden formula, we only
+  //    multiply what was entered. Stored in the profile so export/import/sync
+  //    pick it up for free.
+  //  · Food is logged against a day with a time (no breakfast/lunch/dinner
+  //    buckets), each entry keeping its own macro numbers so editing a food
+  //    later never rewrites history.
+  //  · Donuts on top show today's intake against those targets.
+  var NUT_MACROS = [
+    { key: 'protein', label: 'Protein', short: 'Protein', kcal: 4, color: 'var(--info)' },
+    { key: 'fat', label: 'Lemak', short: 'Lemak', kcal: 9, color: 'var(--warn)' },
+    { key: 'carb', label: 'Karbohidrat', short: 'Karbo', kcal: 4, color: 'var(--success)' }
+  ];
+
+  // ---- targets --------------------------------------------------------------
+  function defaultNutrition() {
+    return {
+      weight: '', bodyfat: '', unit: 'kg', calories: '',
+      protein: { basis: 'total', factor: '' },
+      fat: { basis: 'total', factor: '' },
+      carb: { basis: 'total', factor: '' }
+    };
+  }
+  function getNutrition() {
+    var n = S.getProfile().nutrition || {};
+    var d = defaultNutrition();
+    NUT_MACROS.forEach(function (m) {
+      var cur = n[m.key] || {};
+      d[m.key] = { basis: cur.basis === 'lbm' ? 'lbm' : 'total', factor: cur.factor == null ? '' : String(cur.factor) };
+    });
+    d.weight = n.weight == null ? '' : String(n.weight);
+    d.bodyfat = n.bodyfat == null ? '' : String(n.bodyfat);
+    d.calories = n.calories == null ? '' : String(n.calories);
+    d.unit = n.unit === 'lb' ? 'lb' : 'kg';
+    return d;
+  }
+  function saveNutrition(n) {
+    var p = S.getProfile();
+    p.nutrition = n;
+    S.saveProfile(p);
+  }
+  // Accepts "72,5" as well as "72.5" — Indonesian keyboards give a comma.
+  function numOrNull(v) {
+    if (v == null) return null;
+    var s = String(v).trim().replace(',', '.');
+    if (s === '') return null;
+    var n = parseFloat(s);
+    return isNaN(n) ? null : n;
+  }
+  function num0(v) { var n = numOrNull(v); return n == null ? 0 : n; }
+  function nutritionCalc(n) {
+    var u = unit();
+    var w = numOrNull(n.weight);
+    if (w != null && n.unit !== u) w = round1(convW(w, n.unit, u));
+    var bf = numOrNull(n.bodyfat);
+    var lbm = (w != null && bf != null && bf >= 0 && bf < 100) ? round1(w * (1 - bf / 100)) : null;
+    var out = { unit: u, weight: w, bodyfat: bf, lbm: lbm, macros: {}, macroKcal: 0, target: numOrNull(n.calories) };
+    NUT_MACROS.forEach(function (m) {
+      var basisVal = n[m.key].basis === 'lbm' ? lbm : w;
+      var f = numOrNull(n[m.key].factor);
+      var grams = (basisVal != null && f != null) ? Math.round(basisVal * f) : null;
+      out.macros[m.key] = { basisVal: basisVal, factor: f, grams: grams };
+      if (grams != null) out.macroKcal += grams * m.kcal;
+    });
+    return out;
+  }
+  // Target numbers the rings compare against (null = not set yet).
+  function nutTargets() {
+    var c = nutritionCalc(getNutrition());
+    return {
+      kcal: c.target,
+      protein: c.macros.protein.grams,
+      fat: c.macros.fat.grams,
+      carb: c.macros.carb.grams
+    };
+  }
+
+  // ---- food helpers ---------------------------------------------------------
+  // A food stores its macros per 100 g (unit 'g') or per 1 porsi (unit 'porsi').
+  function foodBaseLabel(f) { return f.unit === 'porsi' ? 'per porsi' : 'per 100 g'; }
+  function foodAmountUnit(f) { return f.unit === 'porsi' ? 'porsi' : 'g'; }
+  function kcalOf(p, f, c) { return Math.round(num0(p) * 4 + num0(f) * 9 + num0(c) * 4); }
+  // Scale a food's per-base macros to an amount actually eaten.
+  function scaleFood(food, amount) {
+    var a = num0(amount);
+    var mult = food.unit === 'porsi' ? a : a / 100;
+    var p = round1(num0(food.protein) * mult);
+    var f = round1(num0(food.fat) * mult);
+    var c = round1(num0(food.carb) * mult);
+    var kcal = food.kcal != null && food.kcal !== '' ? Math.round(num0(food.kcal) * mult) : kcalOf(p, f, c);
+    return { protein: p, fat: f, carb: c, kcal: kcal };
+  }
+  function entriesForDay(day) {
+    return S.getFoodLog().filter(function (e) { return dayKey(e.ts) === day; })
+      .sort(function (a, b) { return a.ts - b.ts; });
+  }
+  function dayTotals(day) {
+    var t = { kcal: 0, protein: 0, fat: 0, carb: 0 };
+    entriesForDay(day).forEach(function (e) {
+      t.kcal += num0(e.kcal); t.protein += num0(e.protein); t.fat += num0(e.fat); t.carb += num0(e.carb);
+    });
+    t.protein = round1(t.protein); t.fat = round1(t.fat); t.carb = round1(t.carb); t.kcal = Math.round(t.kcal);
+    return t;
+  }
+
+  // ---- donut ----------------------------------------------------------------
+  // pct is 0..1+ ; the arc caps at a full circle but the colour flips when over.
+  function donut(consumed, target, label, suffix, color) {
+    var R = 34, C = 2 * Math.PI * R;
+    var has = target != null && target > 0;
+    var pct = has ? consumed / target : 0;
+    var over = pct > 1.02;
+    var dash = Math.max(0, Math.min(1, pct)) * C;
+    var stroke = over ? 'var(--danger)' : color;
+    var left = has ? Math.round(target - consumed) : null;
+    return '<div class="nut-ring"><div class="nut-ring-top">' +
+      '<svg viewBox="0 0 84 84" class="nut-ring-svg">' +
+      '<circle cx="42" cy="42" r="' + R + '" class="nut-ring-bg"></circle>' +
+      (has ? '<circle cx="42" cy="42" r="' + R + '" class="nut-ring-fg" style="stroke:' + stroke + ';stroke-dasharray:' + round1(dash) + ' ' + round1(C) + '"></circle>' : '') +
+      '</svg>' +
+      '<div class="nut-ring-mid"><div class="nut-ring-val num">' + round1(consumed) + '</div>' +
+      '<div class="nut-ring-of num">' + (has ? '/ ' + target : '—') + '</div></div></div>' +
+      '<div class="nut-ring-label">' + label + '</div>' +
+      '<div class="nut-ring-left">' + (has ? (left >= 0 ? 'sisa <span class="num">' + left + '</span> ' + suffix : 'lebih <span class="num">' + Math.abs(left) + '</span> ' + suffix) : 'target belum diisi') + '</div>' +
+      '</div>';
+  }
+
+  // ---- render ---------------------------------------------------------------
+  function renderNutrition() {
+    return '<div class="screen">' + nutritionBody() + '</div>';
+  }
+  function nutritionBody() {
+    var day = state.nutDay || dayKey(Date.now());
+    var isToday = day === dayKey(Date.now());
+    var dayTs = new Date(day + 'T12:00').getTime();
+    var t = nutTargets();
+    var got = dayTotals(day);
+    var entries = entriesForDay(day);
+    var meals = S.getMeals();
+
+    var html = '<div id="nutri-body">';
+
+    // day switcher
+    html += '<div class="nut-day">' +
+      '<button class="nut-day-nav" data-act="nut-day" data-d="-1">' + svg('back', 18) + '</button>' +
+      '<div class="nut-day-mid"><div class="nut-day-t">' + (isToday ? 'Hari ini' : shortDate(dayTs)) + '</div>' +
+      '<div class="nut-day-s">' + esc(fullDate(dayTs)) + '</div></div>' +
+      '<button class="nut-day-nav" data-act="nut-day" data-d="1">' + svg('chevRight', 18) + '</button>' +
+      '</div>';
+
+    // rings
+    html += '<div class="card nut-ringcard">' +
+      '<div class="nut-rings">' +
+      donut(got.kcal, t.kcal, 'Kalori', 'kkal', 'var(--goldDeep)') +
+      NUT_MACROS.map(function (m) { return donut(got[m.key], t[m.key], m.short, 'g', m.color); }).join('') +
+      '</div>' +
+      '<button class="nut-fill" data-act="nut-targets">Atur target &amp; data tubuh</button>' +
+      '</div>';
+
+    // saved menus
+    if (meals.length) {
+      html += '<div class="section-label">Menu tersimpan</div>';
+      html += '<div class="card tight"><div style="padding:4px 16px 10px">';
+      meals.forEach(function (m) {
+        var tot = mealTotals(m);
+        html += '<div class="wt-row tap" data-act="log-meal" data-id="' + m.id + '">' +
+          '<div class="grow" style="min-width:0"><div class="rtitle" style="font-size:13.5px">' + esc(m.name) + '</div>' +
+          '<div class="wt-date">' + m.items.length + ' item · <span class="num">' + tot.kcal + '</span> kkal · P<span class="num">' + tot.protein + '</span> L<span class="num">' + tot.fat + '</span> K<span class="num">' + tot.carb + '</span></div></div>' +
+          '<button class="del" data-act="del-meal" data-id="' + m.id + '">' + svg('trash', 17) + '</button>' +
+          '<span class="chev" style="color:var(--hint)">' + svg('chevRight', 18) + '</span></div>';
+      });
+      html += '</div></div>';
+    }
+
+    // food log
+    html += '<div class="section-label">Makanan hari ini</div>';
+    html += '<div class="card tight"><div class="card-head"><span class="eyebrow">' + entries.length + ' catatan · <span class="num">' + got.kcal + '</span> kkal</span>' +
+      (entries.length ? '<button class="link" data-act="save-as-meal">Simpan jadi menu</button>' : '') + '</div>';
+    html += '<div style="padding:6px 16px 12px">';
+    if (!entries.length) {
+      html += '<div class="muted-line" style="padding:8px 0 12px">Belum ada makanan dicatat. Tap "+ Catat makanan" untuk menambah — pilih dari daftar makananmu atau buat baru.</div>';
+    } else {
+      entries.forEach(function (e) {
+        html += '<div class="wt-row tap" data-act="open-entry" data-id="' + e.id + '">' +
+          '<div class="nut-time num">' + clockStr(e.ts) + '</div>' +
+          '<div class="grow" style="min-width:0;margin-left:10px">' +
+          '<div class="rtitle" style="font-size:13.5px">' + esc(e.name) + '</div>' +
+          '<div class="wt-date"><span class="num">' + round1(e.amount) + '</span> ' + esc(e.amountUnit || 'g') +
+          ' · P<span class="num">' + round1(e.protein) + '</span> L<span class="num">' + round1(e.fat) + '</span> K<span class="num">' + round1(e.carb) + '</span></div></div>' +
+          '<div class="nut-kcal-v num">' + Math.round(e.kcal) + '<span class="u"> kkal</span></div>' +
+          '</div>';
+      });
+    }
+    html += '</div></div>';
+
+    html += '<div class="nut-actions">' +
+      '<button class="btn btn-primary btn-block btn-lg" data-act="add-food-entry">' + svg('plus', 18) + ' Catat makanan</button>' +
+      '<button class="btn btn-secondary btn-block" data-act="open-foods">Makanan saya</button>' +
+      '</div>';
+    html += '</div>';
+    return html;
+  }
+  function updateNutritionBody() {
+    var el = document.getElementById('nutri-body');
+    if (el) el.outerHTML = nutritionBody(); else render();
+  }
+  on('nut-day', function (t) {
+    var day = state.nutDay || dayKey(Date.now());
+    var d = new Date(day + 'T12:00');
+    d.setDate(d.getDate() + (+t.dataset.d));
+    state.nutDay = dayKey(d.getTime());
+    updateNutritionBody();
+  });
+
+  // ---- target sheet ---------------------------------------------------------
+  function nutVal(v, suffix) {
+    return v == null ? '<span class="nut-dash">—</span>'
+      : '<span class="num">' + round1(v) + '</span>' + (suffix ? '<span class="nut-u"> ' + suffix + '</span>' : '');
+  }
+  function nutDeltaText(c) {
+    if (!c.macroKcal || c.target == null) return '';
+    var d = Math.round(c.macroKcal - c.target);
+    if (d === 0) return 'Pas dengan target.';
+    return d > 0 ? 'Makro <span class="num">' + d + '</span> kkal di atas target kalori.'
+                 : 'Makro <span class="num">' + Math.abs(d) + '</span> kkal di bawah target kalori.';
+  }
+  function nutKcalHtml(c) {
+    return c.macroKcal ? '<span class="num">' + c.macroKcal + '</span><span class="nut-u"> kkal</span>' : '<span class="nut-dash">—</span>';
+  }
+  function targetSheetBody() {
+    var n = getNutrition();
+    var c = nutritionCalc(n);
+    var u = c.unit;
+    var last = S.getCheckins().slice().sort(function (a, b) { return b.ts - a.ts; })[0];
+
+    var html = '<div id="nut-target-form">';
+    html += '<div class="section-label" style="margin-top:12px">Data tubuh</div>';
+    html += '<div class="row-fields">' +
+      '<div class="field"><label>Berat (' + u + ')</label>' +
+      '<input class="input num" data-nut="weight" inputmode="decimal" placeholder="0.0" value="' + esc(n.weight) + '" data-act="noop"></div>' +
+      '<div class="field"><label>Lemak tubuh (%)</label>' +
+      '<input class="input num" data-nut="bodyfat" inputmode="decimal" placeholder="0.0" value="' + esc(n.bodyfat) + '" data-act="noop"></div>' +
+      '</div>';
+    html += '<div class="nut-line"><span class="nut-line-l">Massa tanpa lemak</span>' +
+      '<span class="nut-line-v" id="nut-lbm">' + nutVal(c.lbm, u) + '</span></div>';
+    if (last && ((last.weight != null && last.weight !== '') || (last.bodyfat != null && last.bodyfat !== ''))) {
+      html += '<button class="nut-fill" data-act="nut-from-checkin">Ambil dari check-in ' + esc(fullDate(last.ts)) + '</button>';
+    }
+
+    html += '<div class="section-label" style="margin-top:20px">Target makro</div>';
+    NUT_MACROS.forEach(function (m, i) {
+      var mc = c.macros[m.key];
+      var basis = n[m.key].basis;
+      html += '<div class="nut-macro' + (i ? '' : ' first') + '">' +
+        '<div class="nut-macro-top"><span class="nut-macro-name">' + m.label + '</span>' +
+        '<span class="nut-macro-out" id="nut-out-' + m.key + '">' + nutVal(mc.grams, 'g') + '</span></div>' +
+        '<div class="seg nut-seg">' +
+        '<button data-act="nut-basis" data-k="' + m.key + '" data-b="total" class="' + (basis === 'total' ? 'active' : '') + '">Berat total</button>' +
+        '<button data-act="nut-basis" data-k="' + m.key + '" data-b="lbm" class="' + (basis === 'lbm' ? 'active' : '') + '">Massa tanpa lemak</button>' +
+        '</div>' +
+        '<div class="nut-eq">' +
+        '<span class="nut-base" id="nut-base-' + m.key + '">' + nutVal(mc.basisVal, u) + '</span>' +
+        '<span class="nut-x">×</span>' +
+        '<input class="input num nut-fac" data-nut="' + m.key + '" inputmode="decimal" placeholder="0.0" value="' + esc(n[m.key].factor) + '" data-act="noop">' +
+        '<span class="nut-x">g/' + u + '</span>' +
+        '</div></div>';
+    });
+
+    html += '<div class="section-label" style="margin-top:20px">Target kalori</div>';
+    html += '<div class="field"><label>Target harian (kkal)</label>' +
+      '<input class="input num" data-nut="calories" inputmode="decimal" placeholder="0" value="' + esc(n.calories) + '" data-act="noop"></div>' +
+      '<div class="nut-line"><span class="nut-line-l">Kalori dari makro di atas</span>' +
+      '<span class="nut-line-v" id="nut-macro-kcal">' + nutKcalHtml(c) + '</span></div>' +
+      '<div class="nut-delta" id="nut-delta">' + nutDeltaText(c) + '</div>';
+    html += '<div class="muted-line" style="font-size:11.5px">Protein & karbo dihitung 4 kkal/g, lemak 9 kkal/g. Semua angka kamu isi sendiri.</div>';
+    html += '</div>';
+    return html;
+  }
+  on('nut-targets', function () {
+    openSheet('<div class="sheet-head"><div><div class="eyebrow">Nutrisi</div><h2>Target &amp; data tubuh</h2></div>' +
+      '<button class="close" data-act="close-sheet">' + svg('close') + '</button></div>' +
+      '<div class="sheet-body">' + targetSheetBody() + '<div class="spacer"></div></div>' +
+      '<div class="sheet-foot"><button class="btn btn-primary btn-block" data-act="nut-done">Selesai <span class="arrow">&rarr;</span></button></div>');
+  });
+  on('nut-done', function () { closeSheet(); updateNutritionBody(); });
+  // Update only the computed numbers, so typing never rebuilds (and unfocuses) inputs.
+  function refreshTargetOut() {
+    var c = nutritionCalc(getNutrition());
+    function set(id, html) { var el = document.getElementById(id); if (el) el.innerHTML = html; }
+    set('nut-lbm', nutVal(c.lbm, c.unit));
+    NUT_MACROS.forEach(function (m) {
+      set('nut-base-' + m.key, nutVal(c.macros[m.key].basisVal, c.unit));
+      set('nut-out-' + m.key, nutVal(c.macros[m.key].grams, 'g'));
+    });
+    set('nut-macro-kcal', nutKcalHtml(c));
+    set('nut-delta', nutDeltaText(c));
+  }
+  // Typing in any target field writes straight through to the profile.
+  document.addEventListener('input', function (e) {
+    var k = e.target.dataset ? e.target.dataset.nut : null;
+    if (!k) return;
+    var n = getNutrition();
+    if (k === 'weight') { n.weight = e.target.value; n.unit = unit(); }
+    else if (k === 'bodyfat' || k === 'calories') { n[k] = e.target.value; }
+    else if (n[k]) { n[k].factor = e.target.value; }
+    else return;
+    saveNutrition(n);
+    refreshTargetOut();
+  });
+  on('nut-basis', function (t) {
+    var n = getNutrition();
+    if (!n[t.dataset.k]) return;
+    n[t.dataset.k].basis = t.dataset.b;
+    saveNutrition(n);
+    var el = document.getElementById('nut-target-form');
+    if (el) el.outerHTML = targetSheetBody();
+  });
+  on('nut-from-checkin', function () {
+    var last = S.getCheckins().slice().sort(function (a, b) { return b.ts - a.ts; })[0];
+    if (!last) return;
+    var n = getNutrition();
+    var u = unit();
+    if (last.weight != null && last.weight !== '') { n.weight = String(round1(convW(parseFloat(last.weight), last.weightUnit || u, u))); n.unit = u; }
+    if (last.bodyfat != null && last.bodyfat !== '') n.bodyfat = String(last.bodyfat);
+    saveNutrition(n);
+    var el = document.getElementById('nut-target-form');
+    if (el) el.outerHTML = targetSheetBody();
+    toast('Diambil dari check-in terakhir');
+  });
+
+  // ---- my foods -------------------------------------------------------------
+  var _foodSearch = '';
+  function foodRowsHTML(pick) {
+    var q = _foodSearch.trim().toLowerCase();
+    var foods = S.getFoods().filter(function (f) { return !q || f.name.toLowerCase().indexOf(q) !== -1; })
+      .sort(function (a, b) { return a.name.localeCompare(b.name); });
+    if (!foods.length) {
+      return '<div class="muted-line" style="padding:10px 0">' + (q ? 'Tidak ada makanan cocok.' : 'Belum ada makanan. Tambah satu dengan tombol di bawah.') + '</div>';
+    }
+    return foods.map(function (f) {
+      var k = f.kcal != null && f.kcal !== '' ? Math.round(num0(f.kcal)) : kcalOf(f.protein, f.fat, f.carb);
+      return '<div class="wt-row tap" data-act="' + (pick ? 'pick-food' : 'edit-food') + '" data-id="' + f.id + '">' +
+        '<div class="grow" style="min-width:0"><div class="rtitle" style="font-size:13.5px">' + esc(f.name) + '</div>' +
+        '<div class="wt-date">' + foodBaseLabel(f) + ' · <span class="num">' + k + '</span> kkal · P<span class="num">' + round1(num0(f.protein)) + '</span> L<span class="num">' + round1(num0(f.fat)) + '</span> K<span class="num">' + round1(num0(f.carb)) + '</span></div></div>' +
+        '<span class="chev" style="color:var(--hint)">' + svg('chevRight', 18) + '</span></div>';
+    }).join('');
+  }
+  function foodListSheet(pick) {
+    _foodSearch = '';
+    var html = '<div class="sheet-head"><div><div class="eyebrow">' + (pick ? 'Catat makanan' : 'Database') + '</div><h2>' + (pick ? 'Pilih makanan' : 'Makanan saya') + '</h2></div>' +
+      '<button class="close" data-act="close-sheet">' + svg('close') + '</button></div>' +
+      '<div class="sheet-body">' +
+      '<div class="field" style="margin-top:10px"><input class="input" id="food-search" placeholder="Cari makanan…" data-act="noop"></div>' +
+      '<div id="food-rows">' + foodRowsHTML(pick) + '</div>' +
+      '<div class="spacer"></div></div>' +
+      '<div class="sheet-foot"><button class="btn btn-secondary" data-act="close-sheet">Tutup</button>' +
+      '<button class="btn btn-primary" data-act="new-food" data-pick="' + (pick ? '1' : '') + '">+ Makanan baru</button></div>';
+    openSheet(html);
+    var si = document.getElementById('food-search');
+    if (si) si.addEventListener('input', function () {
+      _foodSearch = si.value;
+      var box = document.getElementById('food-rows');
+      if (box) box.innerHTML = foodRowsHTML(pick);
+    });
+  }
+  on('open-foods', function () { foodListSheet(false); });
+
+  var _foodDraft = null;   // food being created/edited
+  function foodEditorSheet(food, pick) {
+    _foodDraft = food;
+    var isNew = !food.id;
+    var u = food.unit === 'porsi' ? 'porsi' : 'g';
+    var html = '<div class="sheet-head"><div><div class="eyebrow">Makanan saya</div><h2>' + (isNew ? 'Makanan baru' : 'Edit makanan') + '</h2></div>' +
+      '<button class="close" data-act="close-sheet">' + svg('close') + '</button></div>' +
+      '<div class="sheet-body">' +
+      '<div class="field"><label>Nama</label><input class="input" id="fd-name" value="' + esc(food.name || '') + '" placeholder="Nasi putih, dada ayam…" data-act="noop"></div>' +
+      '<div class="field"><label>Nilai gizi dihitung</label><div class="seg" id="fd-unit">' +
+      '<button data-act="fd-unit" data-u="g" class="' + (u === 'g' ? 'active' : '') + '">Per 100 g</button>' +
+      '<button data-act="fd-unit" data-u="porsi" class="' + (u === 'porsi' ? 'active' : '') + '">Per porsi</button>' +
+      '</div></div>' +
+      '<div class="row-fields">' +
+      '<div class="field"><label>Protein (g)</label><input class="input num" id="fd-protein" inputmode="decimal" placeholder="0" value="' + esc(food.protein == null ? '' : food.protein) + '" data-act="noop"></div>' +
+      '<div class="field"><label>Lemak (g)</label><input class="input num" id="fd-fat" inputmode="decimal" placeholder="0" value="' + esc(food.fat == null ? '' : food.fat) + '" data-act="noop"></div>' +
+      '<div class="field"><label>Karbo (g)</label><input class="input num" id="fd-carb" inputmode="decimal" placeholder="0" value="' + esc(food.carb == null ? '' : food.carb) + '" data-act="noop"></div>' +
+      '</div>' +
+      '<div class="field"><label>Kalori (kkal) · opsional</label><input class="input num" id="fd-kcal" inputmode="decimal" placeholder="kosongkan = hitung otomatis" value="' + esc(food.kcal == null ? '' : food.kcal) + '" data-act="noop"></div>' +
+      (isNew ? '' : '<div class="spacer"></div><button class="btn btn-danger btn-block" data-act="del-food" data-id="' + food.id + '">Hapus makanan</button>') +
+      '<div class="spacer"></div></div>' +
+      '<div class="sheet-foot"><button class="btn btn-secondary" data-act="close-sheet">Batal</button>' +
+      '<button class="btn btn-primary" data-act="save-food" data-pick="' + (pick ? '1' : '') + '">Simpan <span class="arrow">&rarr;</span></button></div>';
+    openSheet(html);
+    setTimeout(function () { var el = document.getElementById('fd-name'); if (el && isNew) el.focus(); }, 60);
+  }
+  on('new-food', function (t) { foodEditorSheet({ unit: 'g' }, !!t.dataset.pick); });
+  on('edit-food', function (t) {
+    var f = S.getFoods().find(function (x) { return x.id === t.dataset.id; });
+    if (f) foodEditorSheet(JSON.parse(JSON.stringify(f)), false);
+  });
+  on('fd-unit', function (t) {
+    _foodDraft.unit = t.dataset.u;
+    ['name', 'protein', 'fat', 'carb', 'kcal'].forEach(function (k) {
+      var el = document.getElementById('fd-' + k); if (el) _foodDraft[k] = el.value;
+    });
+    foodEditorSheet(_foodDraft, false);
+  });
+  on('save-food', function (t) {
+    var name = document.getElementById('fd-name').value.trim();
+    if (!name) return toast('Isi nama makanan');
+    var food = {
+      id: _foodDraft.id || S.uid(),
+      name: name,
+      unit: _foodDraft.unit === 'porsi' ? 'porsi' : 'g',
+      protein: document.getElementById('fd-protein').value,
+      fat: document.getElementById('fd-fat').value,
+      carb: document.getElementById('fd-carb').value,
+      kcal: document.getElementById('fd-kcal').value
+    };
+    var foods = S.getFoods();
+    var i = foods.findIndex(function (x) { return x.id === food.id; });
+    if (i === -1) foods.push(food); else foods[i] = food;
+    S.saveFoods(foods);
+    toast('Makanan tersimpan');
+    if (t.dataset.pick) amountSheet(food);
+    else foodListSheet(false);
+  });
+  on('del-food', function (t) {
+    if (!confirm('Hapus makanan ini dari daftar? Catatan makan yang sudah ada tetap tersimpan.')) return;
+    S.saveFoods(S.getFoods().filter(function (x) { return x.id !== t.dataset.id; }));
+    foodListSheet(false);
+    toast('Makanan dihapus');
+  });
+
+  // ---- logging a food -------------------------------------------------------
+  on('add-food-entry', function () { foodListSheet(true); });
+  on('pick-food', function (t) {
+    var f = S.getFoods().find(function (x) { return x.id === t.dataset.id; });
+    if (f) amountSheet(f);
+  });
+  var _amountFood = null, _editEntryId = null;
+  function amountPreviewHTML(food, amount) {
+    var s = scaleFood(food, amount);
+    return '<div class="nut-prev">' +
+      '<div class="nut-prev-k num">' + s.kcal + '<span class="u"> kkal</span></div>' +
+      '<div class="nut-prev-m">Protein <span class="num">' + s.protein + '</span> g · Lemak <span class="num">' + s.fat + '</span> g · Karbo <span class="num">' + s.carb + '</span> g</div>' +
+      '</div>';
+  }
+  function amountSheet(food, entry) {
+    _amountFood = food;
+    _editEntryId = entry ? entry.id : null;
+    var au = foodAmountUnit(food);
+    var day = state.nutDay || dayKey(Date.now());
+    var now = new Date();
+    var ts = entry ? new Date(entry.ts) : new Date(day + 'T' + pad(now.getHours()) + ':' + pad(now.getMinutes()));
+    var amount = entry ? entry.amount : (au === 'porsi' ? '1' : '100');
+    var html = '<div class="sheet-head"><div><div class="eyebrow">' + esc(food.name) + '</div><h2>' + (entry ? 'Edit catatan' : 'Berapa banyak?') + '</h2></div>' +
+      '<button class="close" data-act="close-sheet">' + svg('close') + '</button></div>' +
+      '<div class="sheet-body">' +
+      '<div class="field"><label>Jumlah (' + au + ')</label><input class="input num" id="am-val" inputmode="decimal" value="' + esc(amount) + '" data-act="noop"></div>' +
+      '<div id="am-prev">' + amountPreviewHTML(food, amount) + '</div>' +
+      '<div class="row-fields"><div class="field"><label>Tanggal</label><input class="input" id="am-date" type="date" value="' + dayKey(ts.getTime()) + '" data-act="noop"></div>' +
+      '<div class="field"><label>Jam</label><input class="input" id="am-time" type="time" value="' + pad(ts.getHours()) + ':' + pad(ts.getMinutes()) + '" data-act="noop"></div></div>' +
+      '<div class="muted-line" style="font-size:11.5px">' + esc(food.name) + ' · ' + foodBaseLabel(food) + '</div>' +
+      '<div class="spacer"></div></div>' +
+      '<div class="sheet-foot"><button class="btn btn-secondary" data-act="close-sheet">Batal</button>' +
+      '<button class="btn btn-primary" data-act="save-food-entry">' + (entry ? 'Simpan' : 'Catat') + ' <span class="arrow">&rarr;</span></button></div>';
+    openSheet(html);
+    var el = document.getElementById('am-val');
+    if (el) {
+      el.addEventListener('input', function () {
+        var box = document.getElementById('am-prev');
+        if (box) box.innerHTML = amountPreviewHTML(food, el.value);
+      });
+      setTimeout(function () { el.focus(); el.select(); }, 60);
+    }
+  }
+  on('save-food-entry', function () {
+    var food = _amountFood;
+    var amount = numOrNull(document.getElementById('am-val').value);
+    if (amount == null || amount <= 0) return toast('Isi jumlah yang valid');
+    var dt = document.getElementById('am-date').value, tm = document.getElementById('am-time').value;
+    var ts = dt ? new Date(dt + 'T' + (tm || '12:00')).getTime() : Date.now();
+    var s = scaleFood(food, amount);
+    var log = S.getFoodLog();
+    if (_editEntryId) {
+      var i = log.findIndex(function (x) { return x.id === _editEntryId; });
+      if (i !== -1) log[i] = Object.assign(log[i], { ts: ts, amount: amount, protein: s.protein, fat: s.fat, carb: s.carb, kcal: s.kcal });
+    } else {
+      log.push({
+        id: S.uid(), ts: ts, foodId: food.id || null, name: food.name,
+        amount: amount, amountUnit: foodAmountUnit(food),
+        protein: s.protein, fat: s.fat, carb: s.carb, kcal: s.kcal
+      });
+    }
+    S.saveFoodLog(log);
+    state.nutDay = dayKey(ts);
+    closeSheet(); updateNutritionBody();
+    toast(_editEntryId ? 'Catatan diperbarui' : 'Makanan dicatat');
+  });
+  on('open-entry', function (t) {
+    var e = S.getFoodLog().find(function (x) { return x.id === t.dataset.id; });
+    if (!e) return;
+    var food = S.getFoods().find(function (x) { return x.id === e.foodId; });
+    var html = '<div class="sheet-head"><div><div class="eyebrow">' + esc(fullDate(e.ts)) + ' · ' + clockStr(e.ts) + '</div><h2>' + esc(e.name) + '</h2></div>' +
+      '<button class="close" data-act="close-sheet">' + svg('close') + '</button></div>' +
+      '<div class="sheet-body">' +
+      '<div class="darkstrip" style="margin-top:6px">' +
+      ciStat('Jumlah', round1(e.amount) + ' ' + (e.amountUnit || 'g')) +
+      ciStat('Kalori', Math.round(e.kcal) + ' kkal') + '</div>' +
+      '<div class="darkstrip" style="margin-top:10px">' +
+      ciStat('Protein', round1(e.protein) + ' g') +
+      ciStat('Lemak', round1(e.fat) + ' g') +
+      ciStat('Karbo', round1(e.carb) + ' g') + '</div>' +
+      '<div class="spacer"></div>' +
+      (food ? '<button class="btn btn-secondary btn-block" data-act="edit-entry" data-id="' + e.id + '">Ubah jumlah / waktu</button><div class="spacer"></div>' : '') +
+      '<button class="btn btn-danger btn-block" data-act="del-entry" data-id="' + e.id + '">Hapus catatan</button>' +
+      '<div class="spacer"></div></div>';
+    openSheet(html);
+  });
+  on('edit-entry', function (t) {
+    var e = S.getFoodLog().find(function (x) { return x.id === t.dataset.id; });
+    if (!e) return;
+    var food = S.getFoods().find(function (x) { return x.id === e.foodId; });
+    if (food) amountSheet(food, e);
+  });
+  on('del-entry', function (t) {
+    S.saveFoodLog(S.getFoodLog().filter(function (x) { return x.id !== t.dataset.id; }));
+    closeSheet(); updateNutritionBody(); toast('Catatan dihapus');
+  });
+
+  // ---- saved menus (meals) --------------------------------------------------
+  function mealTotals(m) {
+    var t = { kcal: 0, protein: 0, fat: 0, carb: 0 };
+    (m.items || []).forEach(function (it) {
+      t.kcal += num0(it.kcal); t.protein += num0(it.protein); t.fat += num0(it.fat); t.carb += num0(it.carb);
+    });
+    t.kcal = Math.round(t.kcal); t.protein = round1(t.protein); t.fat = round1(t.fat); t.carb = round1(t.carb);
+    return t;
+  }
+  on('save-as-meal', function () {
+    var day = state.nutDay || dayKey(Date.now());
+    var entries = entriesForDay(day);
+    if (!entries.length) return;
+    var name = prompt('Nama menu (mis. "Sarapan biasa")', 'Menu ' + shortDate(new Date(day + 'T12:00').getTime()));
+    if (name == null) return;
+    name = name.trim(); if (!name) return toast('Nama menu kosong');
+    var meals = S.getMeals();
+    meals.push({
+      id: S.uid(), name: name,
+      items: entries.map(function (e) {
+        return { foodId: e.foodId, name: e.name, amount: e.amount, amountUnit: e.amountUnit, protein: e.protein, fat: e.fat, carb: e.carb, kcal: e.kcal };
+      })
+    });
+    S.saveMeals(meals);
+    updateNutritionBody(); toast('Menu tersimpan');
+  });
+  on('log-meal', function (t) {
+    var m = S.getMeals().find(function (x) { return x.id === t.dataset.id; });
+    if (!m) return;
+    var day = state.nutDay || dayKey(Date.now());
+    var now = new Date();
+    var ts = new Date(day + 'T' + pad(now.getHours()) + ':' + pad(now.getMinutes())).getTime();
+    var log = S.getFoodLog();
+    m.items.forEach(function (it, i) {
+      log.push({
+        id: S.uid(), ts: ts + i * 1000, foodId: it.foodId || null, name: it.name,
+        amount: it.amount, amountUnit: it.amountUnit || 'g',
+        protein: it.protein, fat: it.fat, carb: it.carb, kcal: it.kcal
+      });
+    });
+    S.saveFoodLog(log);
+    updateNutritionBody(); toast('Menu "' + m.name + '" dicatat');
+  });
+  on('del-meal', function (t, e) {
+    e.stopPropagation();
+    if (!confirm('Hapus menu ini?')) return;
+    S.saveMeals(S.getMeals().filter(function (x) { return x.id !== t.dataset.id; }));
+    updateNutritionBody();
+  });
+
   // ============================================================ NAV ==========
   var NAV = [
     { id: 'log', label: 'Log', icon: 'log' },
     { id: 'routines', label: 'Routines', icon: 'dumbbell' },
     { id: 'stats', label: 'Statistics', icon: 'stats' },
+    { id: 'nutrition', label: 'Nutrition', icon: 'nutrition' },
     { id: 'profile', label: 'Profile', icon: 'profile' }
   ];
   function buildNav() {
@@ -2031,7 +2617,13 @@
   // ---- Demo data seeding (lets a customer explore a filled-in app instantly) ----
   function seedDemo() {
     S.getLibrary(); // ensure library seeded
-    S.saveProfile({ name: 'Andi Pratama', address: 'Jl. Melati No. 12, Bandung', whatsapp: '0812-3456-7890', height: '176', heightUnit: 'cm', gender: 'Male' });
+    S.saveProfile({ name: 'Andi Pratama', address: 'Jl. Melati No. 12, Bandung', whatsapp: '0812-3456-7890', height: '176', heightUnit: 'cm', gender: 'Male',
+      nutrition: {
+        weight: '82', bodyfat: '18', unit: 'kg', calories: '2400',
+        protein: { basis: 'lbm', factor: '2.2' },
+        fat: { basis: 'total', factor: '0.9' },
+        carb: { basis: 'total', factor: '3' }
+      } });
     S.saveSettings({ unit: 'kg' });
     localStorage.setItem('sterith_auth', JSON.stringify({ email: 'demo@sterith.app', pass: 'demo1234', name: 'Andi Pratama' }));
 
@@ -2144,6 +2736,53 @@
     if (checkins.length) checkins[checkins.length - 1].notes = 'Progres mantap, badan makin kering.';
     S.saveWeight(weights);
     S.saveCheckins(checkins);
+
+    // Nutrition: a small food database, two saved menus, and the last 10 days
+    // of eating so the rings and the log are populated on first open.
+    function food(name, unit, p, f, c) { return { id: S.uid(), name: name, unit: unit, protein: p, fat: f, carb: c, kcal: '' }; }
+    var foods = [
+      food('Nasi putih', 'g', 2.7, 0.3, 28),
+      food('Dada ayam panggang', 'g', 31, 3.6, 0),
+      food('Telur rebus', 'porsi', 6.3, 5.3, 0.6),
+      food('Tempe goreng', 'g', 19, 12, 9),
+      food('Ikan tongkol', 'g', 26, 5, 0),
+      food('Oatmeal', 'g', 13, 7, 68),
+      food('Pisang', 'porsi', 1.3, 0.4, 27),
+      food('Susu protein (1 scoop)', 'porsi', 24, 1.5, 3),
+      food('Brokoli rebus', 'g', 2.8, 0.4, 7),
+      food('Alpukat', 'g', 2, 15, 9)
+    ];
+    S.saveFoods(foods);
+    function byName(n) { return foods.find(function (x) { return x.name === n; }); }
+    function item(name, amount) {
+      var fd = byName(name);
+      var mult = fd.unit === 'porsi' ? amount : amount / 100;
+      return { foodId: fd.id, name: fd.name, amount: amount, amountUnit: fd.unit === 'porsi' ? 'porsi' : 'g',
+        protein: round1(fd.protein * mult), fat: round1(fd.fat * mult), carb: round1(fd.carb * mult),
+        kcal: Math.round((fd.protein * 4 + fd.fat * 9 + fd.carb * 4) * mult) };
+    }
+    S.saveMeals([
+      { id: S.uid(), name: 'Sarapan biasa', items: [item('Oatmeal', 60), item('Susu protein (1 scoop)', 1), item('Pisang', 1)] },
+      { id: S.uid(), name: 'Makan siang bersih', items: [item('Nasi putih', 200), item('Dada ayam panggang', 150), item('Brokoli rebus', 100)] }
+    ]);
+    var plan = [
+      ['Oatmeal', 60, 7], ['Susu protein (1 scoop)', 1, 7], ['Pisang', 1, 10],
+      ['Nasi putih', 200, 12], ['Dada ayam panggang', 150, 12], ['Brokoli rebus', 100, 12],
+      ['Telur rebus', 2, 16], ['Nasi putih', 150, 19], ['Ikan tongkol', 120, 19], ['Tempe goreng', 60, 19]
+    ];
+    var flog = [];
+    for (var dd = 9; dd >= 0; dd--) {
+      var base = new Date(); base.setDate(base.getDate() - dd);
+      plan.forEach(function (row, idx) {
+        // the current day is still in progress — only what's eaten so far
+        if (dd === 0 && row[2] > new Date().getHours()) return;
+        var it = item(row[0], row[1]);
+        var d2 = new Date(base); d2.setHours(row[2], (idx % 3) * 15, 0, 0);
+        flog.push({ id: S.uid(), ts: d2.getTime(), foodId: it.foodId, name: it.name, amount: it.amount,
+          amountUnit: it.amountUnit, protein: it.protein, fat: it.fat, carb: it.carb, kcal: it.kcal });
+      });
+    }
+    S.saveFoodLog(flog);
   }
 
   // ============================================================ BOOT =========

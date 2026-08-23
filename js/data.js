@@ -49,6 +49,9 @@
     logs: 'sterith_logs',
     weight: 'sterith_weight',
     checkins: 'sterith_checkins',
+    foods: 'sterith_foods',
+    meals: 'sterith_meals',
+    foodlog: 'sterith_foodlog',
     profile: 'sterith_profile',
     settings: 'sterith_settings',
     draft: 'sterith_session_draft'
@@ -117,6 +120,16 @@
     getCheckins: function () { return read(K.checkins, []); },
     saveCheckins: function (c) { write(K.checkins, c); },
 
+    // Nutrition: the user's own food database, saved menus, and the food log.
+    getFoods: function () { return read(K.foods, []); },
+    saveFoods: function (f) { write(K.foods, f); },
+
+    getMeals: function () { return read(K.meals, []); },
+    saveMeals: function (m) { write(K.meals, m); },
+
+    getFoodLog: function () { return read(K.foodlog, []); },
+    saveFoodLog: function (l) { write(K.foodlog, l); },
+
     getProfile: function () {
       return read(K.profile, { name: '', address: '', whatsapp: '', height: '', heightUnit: 'cm', gender: '' });
     },
@@ -140,6 +153,9 @@
         logs: this.getLogs(),
         weight: this.getWeight(),
         checkins: this.getCheckins(),
+        foods: this.getFoods(),
+        meals: this.getMeals(),
+        foodlog: this.getFoodLog(),
         profile: this.getProfile(),
         settings: this.getSettings()
       };
@@ -151,6 +167,9 @@
       if (data.logs) write(K.logs, data.logs);
       if (data.weight) write(K.weight, data.weight);
       if (data.checkins) write(K.checkins, data.checkins);
+      if (data.foods) write(K.foods, data.foods);
+      if (data.meals) write(K.meals, data.meals);
+      if (data.foodlog) write(K.foodlog, data.foodlog);
       if (data.profile) write(K.profile, data.profile);
       if (data.settings) write(K.settings, data.settings);
     }
